@@ -86,10 +86,10 @@ test('non-Linux platforms do not read procfs and ancestor walks are bounded', ()
   assert.equal(fixture.paths.filter(path => path.endsWith('/status')).length, 32);
 });
 
-test('real parent process supplies session to a child with a filtered environment', { skip: process.platform !== 'linux' }, async () => {
+test('real parent process supplies session to a child with a filtered environment', { skip: !['linux', 'win32'].includes(process.platform), timeout: 30_000 }, async () => {
   const configUrl = new URL('../src/config.ts', import.meta.url).href;
   const childCode = `import { readRuntimeConfig } from ${JSON.stringify(configUrl)}; import { writeSync } from 'node:fs'; const config = readRuntimeConfig(); writeSync(1, JSON.stringify({ session: config.defaultSession, allowed: [...config.allowedSessions] }));`;
-  const parentCode = `const { spawn } = require('node:child_process'); const child = spawn(process.execPath, ['--input-type=module', '-e', ${JSON.stringify(childCode)}], { env: { PATH: process.env.PATH }, stdio: ['ignore', 'inherit', 'inherit'] }); child.on('error', () => process.exitCode = 1); child.on('close', code => process.exitCode = code ?? 1);`;
+  const parentCode = `const { spawn } = require('node:child_process'); const env = { ...process.env }; delete env.ZELLIJ_SESSION_NAME; const child = spawn(process.execPath, ['--input-type=module', '-e', ${JSON.stringify(childCode)}], { env, stdio: ['ignore', 'inherit', 'inherit'] }); child.on('error', () => process.exitCode = 1); child.on('close', code => process.exitCode = code ?? 1);`;
   const { stdout: result } = await promisify(execFile)(process.execPath, ['-e', parentCode], { env: { ...process.env, ZELLIJ_SESSION_NAME: 'discovery-test-session' }, encoding: 'utf8' });
   assert.deepEqual(JSON.parse(result), { session: 'discovery-test-session', allowed: ['discovery-test-session'] });
 });

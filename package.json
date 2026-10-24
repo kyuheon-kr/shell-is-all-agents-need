@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test --test-isolation=none test/*.test.ts",
-    "test:integration": "node --test --test-isolation=none test/integration.ts",
+    "test:integration": "node test/integration.ts",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
@@ -27,5 +27,11 @@
     "@modelcontextprotocol/client": "^2.0.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
   }
 }

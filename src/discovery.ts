@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { sessionName } from './errors.ts';
+import { discoverWindowsSession } from './windows-discovery.ts';
 
 export interface DiscoveryOptions {
   platform?: string;
@@ -73,5 +74,6 @@ export function discoverClientSession(options: DiscoveryOptions & { pids?: () =>
 }
 
 export function discoverCurrentSession(): string | undefined {
+  if (process.platform === 'win32') return discoverWindowsSession();
   return discoverAncestorSession() ?? discoverClientSession();
 }

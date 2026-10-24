@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readConfig, SessionScope } from '../src/config.ts';
-import { ZellijClient } from '../src/zellij.ts';
+import { pasteChunks, ZellijClient } from '../src/zellij.ts';
 import { ZellijError } from '../src/errors.ts';
 import { setup } from './helpers.ts';
 
@@ -137,6 +137,20 @@ test('text is literal, multiline and Unicode; Enter is a separate explicit actio
   assert.deepEqual(calls.at(-1), ['--session', 'dev', 'action', 'send-keys', '--pane-id', 'terminal_2', '--', 'Ctrl c', 'Left']);
 });
 
+test('Windows pastes fit command-line limits without splitting Unicode or changing text', async () => {
+  const text = 'a'.repeat(8191) + '😀' + '\\"\n한글'.repeat(5000);
+  const chunks = pasteChunks(text, 'win32');
+  assert.ok(chunks.length > 1);
+  assert.equal(chunks.join(''), text);
+  assert.ok(chunks.every(chunk => chunk.length <= 8192 && !/[\uD800-\uDBFF]$/u.test(chunk)));
+  assert.deepEqual(pasteChunks('', 'win32'), []);
+  const { client, calls } = setup();
+  await client.sendText('terminal_1', text, true);
+  assert.equal(calls.filter(args => args[3] === 'paste').map(args => args.at(-1)).join(''), text);
+  assert.equal(calls.filter(args => args[3] === 'send-keys').length, 1);
+  assert.equal(calls.at(-1)!.at(-1), 'Enter');
+});
+
 test('same-pane inputs remain ordered while other panes progress', async () => {
   let release!: () => void;
   const blocked = new Promise<void>(resolve => { release = resolve; });
@@ -193,6 +207,13 @@ test('resize uses the actual CLI increase/decrease syntax and explicit pane IDs'
   assert.deepEqual(calls.at(-1), ['--session', 'dev', 'action', 'resize', '--pane-id', 'terminal_2', 'decrease', 'right']);
   await client.paneAction('close', 'terminal_2');
   assert.deepEqual(calls.at(-1), ['--session', 'dev', 'action', 'close-pane', '--pane-id', 'terminal_2']);
+});
+
+test('capture normalizes Windows CRLF before clipping screen lines', async () => {
+  const { client } = setup(args => args[3] === 'dump-screen' ? 'one\r\ntwo\r\nthree\r\n' : undefined);
+  assert.deepEqual(await client.capture('terminal_1', { lines: 2 }), {
+    session: 'dev', pane_id: 'terminal_1', text: 'two\nthree', truncated: true,
+  });
 });
 
 test('invalid JSON and missing identity never silently return wrong targets', async () => {

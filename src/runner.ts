@@ -2,11 +2,14 @@ import { spawn } from 'node:child_process';
 import { lstatSync } from 'node:fs';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { ZellijError } from './errors.ts';
+import { runWindowsConsole } from './windows-console.ts';
+import { prepareWindowsRename } from './windows-pipes.ts';
 
 export interface RunOptions { signal?: AbortSignal; timeoutMs?: number; maxBytes?: number }
 export interface Runner {
   run(args: string[], options?: RunOptions): Promise<string>;
   stream(args: string[]): ChildProcessWithoutNullStreams;
+  prepareSessionRename?(previous: string, next: string, signal?: AbortSignal): Promise<() => Promise<void>>;
 }
 
 export function createRunner(binary = 'zellij', env: NodeJS.ProcessEnv = process.env): Runner {
@@ -26,16 +29,22 @@ export function createRunner(binary = 'zellij', env: NodeJS.ProcessEnv = process
       // Systems without a standard per-user runtime directory keep Zellij's defaults.
     }
   }
-  delete childEnv.ZELLIJ_PANE_ID;
+  for (const key of Object.keys(childEnv)) {
+    const name = process.platform === 'win32' ? key.toUpperCase() : key;
+    if (name === 'ZELLIJ_PANE_ID' || name === 'ZELLIJ_SESSION_NAME') delete childEnv[key];
+  }
   // All session targets are explicit too. A stale inherited name can mask an
   // exited session as "current" in Zellij's session listing.
-  delete childEnv.ZELLIJ_SESSION_NAME;
   const stream = (args: string[]) => spawn(binary, args, {
-    env: childEnv, shell: false, stdio: ['pipe', 'pipe', 'pipe'],
+    env: childEnv, shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
   });
   return {
     stream,
+    ...(process.platform === 'win32' ? { prepareSessionRename: (previous: string, next: string, signal?: AbortSignal) => prepareWindowsRename(previous, next, childEnv, signal) } : {}),
     run(args, options = {}) {
+      if (process.platform === 'win32' && args[0] === 'attach' && args.includes('--create-background')) {
+        return runWindowsConsole(binary, args, childEnv, options);
+      }
       return new Promise((resolve, reject) => {
         if (options.signal?.aborted) return reject(new ZellijError('CANCELLED', 'Operation cancelled'));
         const child = stream(args);

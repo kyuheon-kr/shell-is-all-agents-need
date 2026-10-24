@@ -32,6 +32,20 @@ function createArgs(options: CreateOptions): string[] {
   return result;
 }
 
+/** Leave room for Windows argv quoting (quotes/backslashes may double in size)
+ * while preserving Unicode code points across consecutive bracketed pastes. */
+export function pasteChunks(text: string, platform = process.platform): string[] {
+  if (platform !== 'win32' || text.length <= 8192) return text ? [text] : [];
+  const chunks: string[] = [];
+  for (let start = 0; start < text.length;) {
+    let end = Math.min(start + 8192, text.length);
+    if (end < text.length && /[\uD800-\uDBFF]/u.test(text[end - 1]!)) end--;
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
+
 export class ZellijClient {
   readonly scope: SessionScope;
   readonly runner: Runner;
@@ -90,7 +104,9 @@ export class ZellijClient {
     const previous = await this.requireSession(session, signal);
     if (previous === next) return { session: next };
     if ((await this.activeSessions(signal)).includes(next)) fail('ALREADY_EXISTS', `Session '${next}' already exists`);
+    const finishRename = await this.runner.prepareSessionRename?.(previous, next, signal);
     await this.action(previous, ['rename-session', '--', next], signal);
+    await finishRename?.();
     this.scope.renamed(previous, next);
     return { session: next };
   }
@@ -215,7 +231,7 @@ export class ZellijClient {
     const target = this.scope.resolve(session);
     return this.input(target, id, async () => {
       await this.requirePanes([id], target, signal);
-      if (text.length) await this.action(target, ['paste', '--pane-id', id, '--', text], signal);
+      for (const chunk of pasteChunks(text)) await this.action(target, ['paste', '--pane-id', id, '--', chunk], signal);
       if (enter) await this.action(target, ['send-keys', '--pane-id', id, '--', 'Enter'], signal);
       return { session: target, pane_id: id };
     }, signal);
@@ -241,7 +257,7 @@ export class ZellijClient {
     if (options.ansi) args.push('--ansi');
     let text = await this.action(target, args, signal);
     if (!options.ansi) text = stripVTControlCharacters(text);
-    const lines = text.replace(/\n$/u, '').split('\n');
+    const lines = text.replace(/\r\n/gu, '\n').replace(/\n$/u, '').split('\n');
     return { session: target, pane_id: id, text: lines.slice(-limit).join('\n'), truncated: lines.length > limit };
   }
 }

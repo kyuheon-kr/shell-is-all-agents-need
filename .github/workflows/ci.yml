@@ -7,7 +7,11 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,3 +21,33 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
+      - name: Install Zellij (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          asset=zellij-x86_64-unknown-linux-musl
+          url=https://github.com/zellij-org/zellij/releases/download/v0.45.1
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "$url/$asset.tar.gz"
+          curl -fsSLO "$url/$asset.sha256sum"
+          mkdir -p zellij-bin
+          tar -xzf "$asset.tar.gz" -C zellij-bin
+          read -r expected _ < "$asset.sha256sum"
+          printf '%s  %s\n' "$expected" 'zellij-bin/zellij' | sha256sum -c -
+          echo "$RUNNER_TEMP/zellij-bin" >> "$GITHUB_PATH"
+      - name: Install Zellij (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $asset = 'zellij-x86_64-pc-windows-msvc'
+          $url = 'https://github.com/zellij-org/zellij/releases/download/v0.45.1'
+          $archive = Join-Path $env:RUNNER_TEMP "$asset.zip"
+          Invoke-WebRequest "$url/$asset.zip" -OutFile $archive
+          $checksum = (Invoke-WebRequest "$url/$asset.sha256sum").Content
+          if ($checksum -is [byte[]]) { $checksum = [Text.Encoding]::UTF8.GetString($checksum) }
+          $expected = ($checksum.Trim() -split '\s+')[0]
+          $directory = Join-Path $env:RUNNER_TEMP 'zellij-bin'
+          Expand-Archive $archive -DestinationPath $directory
+          if ((Get-FileHash (Join-Path $directory 'zellij.exe') -Algorithm SHA256).Hash -ne $expected) { throw 'Zellij checksum mismatch' }
+          $directory >> $env:GITHUB_PATH
+      - run: npm run test:integration

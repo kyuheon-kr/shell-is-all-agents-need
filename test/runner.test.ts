@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { createRunner } from '../src/runner.ts';
 import { ZellijError } from '../src/errors.ts';
 import { lstatSync } from 'node:fs';
+import { pasteChunks } from '../src/zellij.ts';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const code = (expected: string) => (error: unknown) => error instanceof ZellijError && error.code === expected;
 
@@ -56,4 +59,56 @@ test('runner abort handles both already aborted and running subprocesses', async
 
 test('runner bounds subprocess output', async () => {
   await assert.rejects(createRunner(process.execPath).run(['-e', 'require("node:fs").writeSync(1,"x".repeat(1000))'], { maxBytes: 20 }), code('RESOURCE_LIMIT'));
+});
+
+test('Windows argv preserves large Unicode pastes with quotes and backslashes', { skip: process.platform !== 'win32', timeout: 30_000 }, async () => {
+  const text = '한글😀"\\\n'.repeat(4000);
+  const parts: string[] = [];
+  for (const chunk of pasteChunks(text)) {
+    const output = await createRunner(process.execPath).run(['-e', 'require("node:fs").writeSync(1,JSON.stringify(process.argv[1]))', '--', chunk]);
+    parts.push(JSON.parse(output));
+  }
+  assert.equal(parts.join(''), text);
+});
+
+test('Windows environment scrubbing is case insensitive', { skip: process.platform !== 'win32' }, async () => {
+  const output = await createRunner(process.execPath, {
+    ...process.env, zellij_pane_id: '99', zellij_session_name: 'stale',
+  }).run(['-e', 'require("node:fs").writeSync(1,JSON.stringify([process.env.ZELLIJ_PANE_ID,process.env.ZELLIJ_SESSION_NAME]))']);
+  assert.deepEqual(JSON.parse(output), [null, null]);
+});
+
+test('Windows console bootstrap preserves argv, bounds output, cancels and releases workers', {
+  skip: process.platform !== 'win32', timeout: 30_000,
+}, async () => {
+  const module = new URL('../src/windows-console.ts', import.meta.url).href;
+  // A separate host also verifies that console workers do not keep Node alive.
+  // It avoids forwarding node:test's CLI flags to node-pty's own helper process.
+  const source = `
+    import assert from 'node:assert/strict';
+    import { writeSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+    import { tmpdir } from 'node:os';
+    import { join } from 'node:path';
+    import { runWindowsConsole } from ${JSON.stringify(module)};
+    const run = (args, options = {}) => runWindowsConsole(process.execPath, args, process.env, options);
+    const literal = '한글 " & echo unsafe \\\\';
+    const directory = mkdtempSync(join(tmpdir(), 'shell-agents-console-'));
+    try {
+    const file = join(directory, 'argv.json');
+    await run(['-e', 'require("node:fs").writeFileSync(process.argv[1], JSON.stringify(process.argv[2]))', '--', file, literal]);
+    assert.equal(JSON.parse(readFileSync(file, 'utf8')), literal);
+    const code = expected => error => error.code === expected;
+    await assert.rejects(run(['-e', 'process.exit(7)']), code('CLI_ERROR'));
+    await assert.rejects(run(['-e', 'setInterval(()=>{},1000)'], {timeoutMs: 300}), code('TIMEOUT'));
+    await assert.rejects(run(['-e', 'require("node:fs").writeSync(1,"x".repeat(10000))'], {maxBytes: 20}), code('RESOURCE_LIMIT'));
+    const controller = new AbortController();
+    const pending = run(['-e', 'setInterval(()=>{},1000)'], {signal: controller.signal});
+    setTimeout(() => controller.abort(), 100);
+    await assert.rejects(pending, code('CANCELLED'));
+    await assert.rejects(run([], {signal: controller.signal}), code('CANCELLED'));
+    writeSync(1, 'WINDOWS_CONSOLE_OK');
+    } finally { rmSync(directory, {recursive:true, force:true}); }
+  `;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', source], { timeout: 25_000 });
+  assert.equal(stdout, 'WINDOWS_CONSOLE_OK');
 });

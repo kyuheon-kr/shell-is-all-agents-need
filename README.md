@@ -36,6 +36,8 @@ Zellij provides the shared workspace. shell-is-all-agents-need gives the agent a
 
 Requires **Node.js 24+** and **Zellij 0.45.1+** on PATH, running under the same user.
 
+Linux, native Windows, and WSL can run the server. On Windows, install the native Windows build of Zellij and run Node, Zellij, and your MCP host in the same Windows environment. In WSL, run all three in the same Linux distribution. A Windows process does not automatically discover sessions inside WSL, or vice versa.
+
 Install from this checkout and register with Codex:
 
 ```sh
@@ -53,12 +55,23 @@ codex mcp add shell-is-all-agents-need -- shell-is-all-agents-need --allowed-ses
 
 After changing the registered arguments, restart the MCP host to apply them. Run `shell-is-all-agents-need --help` for command-line options.
 
+On native Windows, registering Node directly avoids depending on an npm `.cmd` launcher. For example, in PowerShell from this checkout:
+
+```powershell
+npm install
+codex mcp add shell-is-all-agents-need -- node "$PWD\bin\shell-is-all-agents-need.js"
+```
+
+Run the host inside a Zellij pane to detect that session automatically. Windows discovery uses the included Windows PowerShell and a read-only Win32 helper; no separate compiler or administrator privileges are required. Keep optional npm dependencies enabled: Windows background session creation uses `node-pty` (with prebuilt Windows binaries) to supply an isolated ConPTY, without opening a window or attaching the host to the session. Other CLI commands use ordinary pipes. Linux does not load this optional dependency during normal use.
+
+Windows session renaming also starts a small pipe helper to work around Zellij 0.45.1 leaving its IPC endpoints under the original name. The helper restricts access to the current Windows user, survives MCP host restarts, and exits when that Zellij server exits. Subsequent renames reuse the same helper. Terminal processes keep running throughout the rename.
+
 <details>
 <summary>Connecting to a session</summary>
 
-Without command-line session options, the server uses environment configuration and attempts automatic discovery. It uses the inherited `ZELLIJ_SESSION_NAME`; on Linux, it also searches its same-user parent process chain (including PID 1 in a PID namespace) when the MCP host filters that variable. When a shared Codex daemon breaks that parent chain, Linux discovery also checks same-user Codex CLI processes. It accepts a session only when all visible client session names agree; clients in multiple sessions remain ambiguous and are not automatically allowed. It does not grant access to every running Zellij session. The detected session is added to the allowed sessions and used as the default unless an environment default is configured. Discovery cannot identify the session if the host has neither the variable nor an accessible ancestor carrying it, for example with inaccessible client environments, clients in multiple sessions, or an isolated process tree. Use `--allowed-sessions` for reliable explicit configuration in those environments.
+Without command-line session options, the server uses environment configuration and attempts automatic discovery. It uses the inherited `ZELLIJ_SESSION_NAME`; on Linux and Windows, it also searches its same-user parent process chain when the MCP host filters that variable. Linux includes PID 1 in a PID namespace; Windows checks process token user SIDs before reading process environments. When a shared Codex daemon breaks that parent chain, discovery also checks same-user Codex CLI processes, excluding `app-server` and `exec-server`. It accepts a session only when all visible client session names agree; clients in multiple sessions remain ambiguous and are not automatically allowed. Only session metadata is returned from process inspection. It does not grant access to every running Zellij session. The detected session is added to the allowed sessions and used as the default unless an environment default is configured. Discovery cannot identify the session if the host has neither the variable nor an accessible ancestor carrying it, for example with inaccessible client environments, clients in multiple sessions, or an isolated process tree. Use `--allowed-sessions` for reliable explicit configuration in those environments.
 
-On other platforms, or when discovery is unavailable, forward `ZELLIJ_SESSION_NAME` through your MCP host or configure the session explicitly:
+On other platforms, or when discovery is unavailable (including Windows policies that block PowerShell helpers or process inspection), forward `ZELLIJ_SESSION_NAME` through your MCP host or configure the session explicitly:
 
 ```sh
 codex mcp add shell-is-all-agents-need \
@@ -83,6 +96,8 @@ codex mcp add shell-is-all-agents-need \
 
 Discover tab and pane IDs through the list tools. Targeted calls use the default session unless `session` is supplied. `send_text` pastes without Enter by default; use `enter=true` to submit. Input goes to the program running in the pane.
 
+On Windows, long text is pasted in consecutive chunks to stay within the Windows command-line limit. Unicode code points and input ordering are preserved, and an optional Enter is sent once after the final chunk. Screen captures normalize Windows CRLF line endings.
+
 `list_sessions` returns the configured allowed session names without querying Zellij or filtering by running state. A listed session may be stopped or inaccessible; operations on it still validate that it is running.
 
 For live observation, subscribe to pane IDs, read with the returned subscription ID and cursor, then continue with `next_cursor`. Unsubscribe when finished. Events capture rendered screen updates; history lives in memory, and `gap=true` indicates older events were dropped.
@@ -97,6 +112,6 @@ npm run build
 
 `check` runs the TypeScript checker and unit tests without requiring Zellij. `build` writes JavaScript, declarations, and source maps to `dist/`; the CLI runs the TypeScript sources directly on Node.js 24+.
 
-To exercise a real Zellij installation, run `npm run test:integration`. This test creates temporary sessions and cleans them up afterward. It skips when Zellij is unavailable. Set `SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN` to use a binary outside PATH.
+To exercise a real Zellij installation, run `npm run test:integration`. This test uses `node-pty` to attach a client in an isolated terminal, creates temporary sessions, and cleans them up afterward. Installing `node-pty` on Linux may require the C++ build tools used by `node-gyp`. The test uses PowerShell on Windows and `sh` on Linux. It skips locally when Zellij is unavailable; missing Zellij fails in CI. Set `SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN` to use a binary outside PATH.
 
-Commit `package-lock.json` to keep installations reproducible. Dependencies, build output, local environment files, credentials, and agent settings are excluded by `.gitignore`. GitHub Actions runs `check` and `build` on pushes and pull requests.
+Commit `package-lock.json` to keep installations reproducible. Dependencies, build output, local environment files, credentials, and agent settings are excluded by `.gitignore`. GitHub Actions runs `check`, `build`, and the real Zellij integration test on Linux and Windows for pushes and pull requests. Windows tests also exercise native parent and shared-daemon process discovery.
