@@ -1,0 +1,27 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Logs and temporary files
+*.log
+*.tgz
+*.tmp
+*.swp
+*.swo
+*~
+
+# Local environment, credentials and agent settings
+.env
+.env.*
+!.env.example
+.aws/
+.codex/
+.agents/
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
