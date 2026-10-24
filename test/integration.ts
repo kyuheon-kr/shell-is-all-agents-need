@@ -24,6 +24,15 @@ async function waitFor<T>(read: () => Promise<T>, ready: (value: T) => boolean):
   throw new Error('Zellij metadata did not become ready within 5 seconds');
 }
 
+function reportFailure(error: unknown): void {
+  console.error(error);
+  if (process.env.GITHUB_ACTIONS) {
+    const message = (error instanceof Error ? error.stack || error.message : String(error))
+      .replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+    console.error(`::error title=Zellij integration::${message}`);
+  }
+}
+
 test('real Zellij: background session, tabs, panes, I/O, subscriptions and lifecycle', { timeout: 120_000 }, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'shell-agents-integration-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -53,14 +62,14 @@ test('real Zellij: background session, tabs, panes, I/O, subscriptions and lifec
     if (!process.env.CI && error instanceof ZellijError && error.code === 'BINARY_NOT_FOUND') {
       t.skip('Zellij is not installed; set SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN to Zellij >= 0.45.1'); return;
     }
-    throw error;
+    reportFailure(error); throw error;
   }
   const manager = new SubscriptionManager(client);
   t.after(async () => {
     manager.dispose();
     for (const session of [name, renamed, renamedAgain]) {
       try { await client.closeSession(session); }
-      catch (error) { if (!(error instanceof ZellijError && error.code === 'NOT_FOUND')) throw error; }
+      catch (error) { if (!(error instanceof ZellijError && error.code === 'NOT_FOUND')) { reportFailure(error); throw error; } }
     }
   });
   try {
@@ -73,7 +82,11 @@ test('real Zellij: background session, tabs, panes, I/O, subscriptions and lifec
     let terminalOutput = '';
     terminal.onData(data => { terminalOutput = (terminalOutput + data).slice(-4000); });
     t.after(() => { try { terminal.kill(); } catch {} });
-    const tabs = await waitFor(() => client.listTabs(), result => result.tabs.length > 0).catch(async error => {
+    // Background creation already exposes tabs before a real client has
+    // connected. New layouts need that client's terminal dimensions, especially
+    // on fresh CI machines where the PTY/client starts later than the CLI.
+    const tabs = await waitFor(() => client.listTabs(), result => result.tabs.some(tab => tab.active === true
+      || (Array.isArray(tab.other_focused_clients) && tab.other_focused_clients.length > 0))).catch(async error => {
       t.diagnostic(`Terminal output: ${terminalOutput}`);
       t.diagnostic(`Session listing: ${await runner.run(['list-sessions', '--no-formatting'])}`);
       throw error;
@@ -152,7 +165,7 @@ test('real Zellij: background session, tabs, panes, I/O, subscriptions and lifec
     terminal.kill();
     await client.closeSession();
   } catch (error) {
-    console.error(error);
+    reportFailure(error);
     throw error;
   }
 });
