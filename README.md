@@ -45,7 +45,7 @@ npm link
 codex mcp add shell-is-all-agents-need -- shell-is-all-agents-need --allowed-sessions a,b,c
 ```
 
-Replace `a,b,c` with your Zellij session names. The first name is the default; use `--session b` to choose another allowed session. Explicit `--allowed-sessions` restricts access to exactly that list, regardless of inherited environment or automatic discovery. Launch Codex, then ask it to open a shared pane and work there. This package is not published to npm yet; `npm link` exposes the local executable.
+Replace `a,b,c` with your Zellij session names. The first name is the default; use `--session b` to choose another allowed session. `--allowed-sessions` replaces the environment allowlist; the detected current Zellij session is always added, even when it is absent from the explicit list. The first listed session remains the default unless `--session` is specified. Launch Codex, then ask it to open a shared pane and work there. This package is not published to npm yet; `npm link` exposes the local executable.
 
 ```sh
 codex mcp add shell-is-all-agents-need -- shell-is-all-agents-need --allowed-sessions dev,work --session work
@@ -56,7 +56,7 @@ After changing the registered arguments, restart the MCP host to apply them. Run
 <details>
 <summary>Connecting to a session</summary>
 
-Without command-line session options, the server uses environment configuration and attempts automatic discovery. It uses the inherited `ZELLIJ_SESSION_NAME`; on Linux, it also searches its same-user parent process chain (including PID 1 in a PID namespace) when the MCP host filters that variable. The detected session is added to the allowed sessions and used as the default unless an environment default is configured. Discovery cannot identify the session if the host has neither the variable nor an accessible ancestor carrying it, for example with a detached daemon or isolated process tree. Use `--allowed-sessions` for reliable explicit configuration in those environments.
+Without command-line session options, the server uses environment configuration and attempts automatic discovery. It uses the inherited `ZELLIJ_SESSION_NAME`; on Linux, it also searches its same-user parent process chain (including PID 1 in a PID namespace) when the MCP host filters that variable. When a shared Codex daemon breaks that parent chain, Linux discovery also checks same-user Codex CLI processes. It accepts a session only when all visible client session names agree; clients in multiple sessions remain ambiguous and are not automatically allowed. It does not grant access to every running Zellij session. The detected session is added to the allowed sessions and used as the default unless an environment default is configured. Discovery cannot identify the session if the host has neither the variable nor an accessible ancestor carrying it, for example with inaccessible client environments, clients in multiple sessions, or an isolated process tree. Use `--allowed-sessions` for reliable explicit configuration in those environments.
 
 On other platforms, or when discovery is unavailable, forward `ZELLIJ_SESSION_NAME` through your MCP host or configure the session explicitly:
 

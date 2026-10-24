@@ -1,5 +1,5 @@
 import { fail, sessionName } from './errors.ts';
-import { discoverAncestorSession } from './discovery.ts';
+import { discoverCurrentSession } from './discovery.ts';
 
 export interface Config {
   binary: string;
@@ -22,7 +22,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): Config {
 /** Startup discovery stays separate from deterministic explicit configuration parsing. */
 export function readRuntimeConfig(
   env: NodeJS.ProcessEnv = process.env,
-  discover: () => string | undefined = discoverAncestorSession,
+  discover: () => string | undefined = discoverCurrentSession,
 ): Config {
   // Additional sessions do not replace the session hosting this process.
   // Keep an explicit default, but always include the detected current session.

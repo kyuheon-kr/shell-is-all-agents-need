@@ -1,16 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readCliConfig } from '../src/cli.ts';
+import { readCliConfig as parseCliConfig } from '../src/cli.ts';
 
-test('explicit sessions set the exact scope and first default despite inherited environment', () => {
+const readCliConfig = (args: string[], env: NodeJS.ProcessEnv) => parseCliConfig(args, env, () => undefined);
+
+test('explicit sessions include the current session and preserve the first default', () => {
   const options = readCliConfig(['--allowed-sessions', ' a,b,a,c '], {
     ZELLIJ_SESSION_NAME: 'outside',
-    SHELL_IS_ALL_AGENTS_NEED_SESSIONS: 'outside',
+    SHELL_IS_ALL_AGENTS_NEED_SESSIONS: 'unrelated',
     SHELL_IS_ALL_AGENTS_NEED_SESSION: 'outside',
     SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN: '/custom/zellij',
   });
   assert.ok('config' in options);
-  assert.deepEqual([...options.config.allowedSessions], ['a', 'b', 'c']);
+  assert.deepEqual([...options.config.allowedSessions], ['a', 'b', 'c', 'outside']);
   assert.equal(options.config.defaultSession, 'a');
   assert.equal(options.config.binary, '/custom/zellij');
 });
@@ -35,4 +37,19 @@ test('no flags preserve environment configuration; help needs no session', () =>
   assert.ok('config' in options);
   assert.equal(options.config.defaultSession, 'dev');
   assert.deepEqual(readCliConfig(['--help'], {}), { help: true });
+});
+
+test('explicit sessions recover the current session through ancestor discovery', () => {
+  const options = parseCliConfig(['--allowed-sessions=a,b', '--session=b'], {}, () => 'current');
+  assert.ok('config' in options);
+  assert.deepEqual([...options.config.allowedSessions], ['a', 'b', 'current']);
+  assert.equal(options.config.defaultSession, 'b');
+});
+
+test('an inherited current session bypasses discovery and is deduplicated', () => {
+  const options = parseCliConfig(['--allowed-sessions=a,b'], { ZELLIJ_SESSION_NAME: 'a' }, () => {
+    throw new Error('discovery must not run');
+  });
+  assert.ok('config' in options);
+  assert.deepEqual([...options.config.allowedSessions], ['a', 'b']);
 });

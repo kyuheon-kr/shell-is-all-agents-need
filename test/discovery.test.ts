@@ -93,3 +93,28 @@ test('real parent process supplies session to a child with a filtered environmen
   const { stdout: result } = await promisify(execFile)(process.execPath, ['-e', parentCode], { env: { ...process.env, ZELLIJ_SESSION_NAME: 'discovery-test-session' }, encoding: 'utf8' });
   assert.deepEqual(JSON.parse(result), { session: 'discovery-test-session', allowed: ['discovery-test-session'] });
 });
+
+test('shared daemon discovery accepts only a unique same-user Codex client session', async () => {
+  const { discoverClientSession } = await import('../src/discovery.ts');
+  function fixture(entries: Record<string, { session?: string; uid?: number; command?: string }>) {
+    return {
+      platform: 'linux', uid: 1000, pids: () => Object.keys(entries),
+      read(path: string) {
+        const [, pid, file] = /^\/proc\/(\d+)\/(.*)$/u.exec(path)!;
+        const entry = entries[pid!]!;
+        if (file === 'status') return `Uid:\t${entry.uid ?? 1000}\t${entry.uid ?? 1000}\n`;
+        if (file === 'cmdline') return entry.command ?? '/opt/bin/codex\0resume\0';
+        if (entry.session === undefined) throw new Error('inaccessible environment');
+        return `ZELLIJ_SESSION_NAME=${entry.session}\0`;
+      },
+    };
+  }
+  assert.equal(discoverClientSession(fixture({ '1': { session: 'dev' }, '2': { session: 'dev' } })), 'dev');
+  assert.equal(discoverClientSession(fixture({ '1': { session: 'dev' }, '2': { session: 'work' } })), undefined);
+  assert.equal(discoverClientSession(fixture({ '1': { session: 'other', uid: 0 } })), undefined);
+  assert.equal(discoverClientSession(fixture({ '1': { session: 'other', command: '/bin/sh\0' } })), undefined);
+  assert.equal(discoverClientSession(fixture({ '1': { session: 'old', command: '/opt/codex\0app-server\0' } })), undefined);
+  assert.equal(discoverClientSession(fixture({ '1': {}, '2': { session: '../bad' }, '3': { session: 'dev' } })), 'dev');
+  assert.equal(discoverClientSession({ platform: 'darwin', pids: () => { throw new Error('must not scan'); } }), undefined);
+  assert.equal(discoverClientSession({ platform: 'linux', uid: 1000, pids: () => { throw new Error('no proc'); } }), undefined);
+});

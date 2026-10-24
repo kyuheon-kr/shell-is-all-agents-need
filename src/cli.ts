@@ -1,21 +1,23 @@
 import { parseArgs } from 'node:util';
-import { readConfig, readRuntimeConfig } from './config.ts';
+import { readRuntimeConfig } from './config.ts';
 import type { Config } from './config.ts';
+import { discoverCurrentSession } from './discovery.ts';
 import { fail, sessionName } from './errors.ts';
 
 export const help = `Usage: shell-is-all-agents-need [options]
 
-  --allowed-sessions a,b,c  Allow exactly these sessions; default to the first
+  --allowed-sessions a,b,c  Allow these plus the detected current session; default to the first
   --session name            Choose a default from the allowed sessions
   --help                    Show this help
 
 Example:
   codex mcp add shell-is-all-agents-need -- shell-is-all-agents-need --allowed-sessions a,b,c
 
+The detected current session is always allowed.
 Without session options, use environment configuration and automatic discovery.
 `;
 
-export function readCliConfig(args: string[], env: NodeJS.ProcessEnv = process.env): { help: true } | { config: Config } {
+export function readCliConfig(args: string[], env: NodeJS.ProcessEnv = process.env, discover: () => string | undefined = discoverCurrentSession): { help: true } | { config: Config } {
   const { values } = parseArgs({ args, options: {
     'allowed-sessions': { type: 'string' },
     session: { type: 'string' },
@@ -23,9 +25,9 @@ export function readCliConfig(args: string[], env: NodeJS.ProcessEnv = process.e
   }, strict: true, allowPositionals: false });
   if (values.help) return { help: true };
   if (values['allowed-sessions'] === undefined && values.session === undefined) {
-    return { config: readRuntimeConfig(env) };
+    return { config: readRuntimeConfig(env, discover) };
   }
-  // Explicit CLI scope must not be broadened by inherited or discovered sessions.
+  // CLI lists replace environment lists; the detected current session is always added.
   const sessions = values['allowed-sessions'] ?? env.SHELL_IS_ALL_AGENTS_NEED_SESSIONS;
   if (!sessions?.trim()) fail('INVALID_ARGUMENT', '--allowed-sessions must contain at least one session');
   const names = sessions.split(',').map(name => name.trim());
@@ -33,9 +35,10 @@ export function readCliConfig(args: string[], env: NodeJS.ProcessEnv = process.e
   const target = values.session ?? names[0]!;
   sessionName(target);
   if (!names.includes(target)) fail('ACCESS_DENIED', '--session must appear in --allowed-sessions');
-  return { config: readConfig({
+  return { config: readRuntimeConfig({
+    ZELLIJ_SESSION_NAME: env.ZELLIJ_SESSION_NAME,
     SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN: env.SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN,
     SHELL_IS_ALL_AGENTS_NEED_SESSIONS: names.join(','),
     SHELL_IS_ALL_AGENTS_NEED_SESSION: target,
-  }) };
+  }, discover) };
 }

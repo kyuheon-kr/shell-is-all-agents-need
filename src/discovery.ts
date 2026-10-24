@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { sessionName } from './errors.ts';
 
 export interface DiscoveryOptions {
@@ -39,4 +39,39 @@ export function discoverAncestorSession(options: DiscoveryOptions = {}): string 
     if (!Number.isSafeInteger(pid)) return undefined;
   }
   return undefined;
+}
+
+/** A shared daemon is not descended from its interactive clients. Recover only
+ * a unique session advertised by same-user Codex CLI processes, never an
+ * arbitrary running Zellij session. Multiple clients in one session are fine. */
+export function discoverClientSession(options: DiscoveryOptions & { pids?: () => string[] } = {}): string | undefined {
+  if ((options.platform ?? process.platform) !== 'linux') return undefined;
+  const uid = options.uid ?? process.getuid?.();
+  if (uid === undefined) return undefined;
+  const read = options.read ?? ((path: string) => readFileSync(path, 'utf8'));
+  let pids: string[];
+  try { pids = (options.pids ?? (() => readdirSync('/proc')))(); }
+  catch { return undefined; }
+  const sessions = new Set<string>();
+  for (const pid of pids) {
+    if (!/^\d+$/u.test(pid)) continue;
+    try {
+      const owner = /^Uid:\s+(\d+)\s+(\d+)/mu.exec(read(`/proc/${pid}/status`));
+      if (!owner || Number(owner[1]) !== uid || Number(owner[2]) !== uid) continue;
+      const argv = read(`/proc/${pid}/cmdline`).split('\0');
+      if (argv[0]?.split('/').at(-1) !== 'codex') continue;
+      if (argv.includes('app-server') || argv.includes('exec-server')) continue;
+      const entry = read(`/proc/${pid}/environ`).split('\0').find(value => value.startsWith('ZELLIJ_SESSION_NAME='));
+      if (!entry) continue;
+      sessions.add(sessionName(entry.slice('ZELLIJ_SESSION_NAME='.length)));
+      if (sessions.size > 1) return undefined;
+    } catch {
+      // Processes may exit or protect their environment while scanning.
+    }
+  }
+  return sessions.values().next().value;
+}
+
+export function discoverCurrentSession(): string | undefined {
+  return discoverAncestorSession() ?? discoverClientSession();
 }
