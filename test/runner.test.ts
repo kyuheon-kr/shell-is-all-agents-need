@@ -6,6 +6,8 @@ import { lstatSync } from 'node:fs';
 import { pasteChunks } from '../src/zellij.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolveWindowsExecutable } from '../src/windows-console.ts';
+import { win32 } from 'node:path';
 
 const code = (expected: string) => (error: unknown) => error instanceof ZellijError && error.code === expected;
 
@@ -76,6 +78,16 @@ test('Windows environment scrubbing is case insensitive', { skip: process.platfo
     ...process.env, zellij_pane_id: '99', zellij_session_name: 'stale',
   }).run(['-e', 'require("node:fs").writeSync(1,JSON.stringify([process.env.ZELLIJ_PANE_ID,process.env.ZELLIJ_SESSION_NAME]))']);
   assert.deepEqual(JSON.parse(output), [null, null]);
+});
+
+test('Windows console resolves bare names, relative paths and the last PATH entry', { skip: process.platform !== 'win32' }, () => {
+  const directory = win32.dirname(process.execPath);
+  const file = win32.basename(process.execPath);
+  const name = file.replace(/\.exe$/iu, '');
+  assert.equal(resolveWindowsExecutable(name, { pAtH: `C:\\missing;"${directory}"` }), process.execPath);
+  assert.equal(resolveWindowsExecutable(`.\\${file}`, {}, directory), process.execPath);
+  assert.equal(resolveWindowsExecutable(process.execPath.replace(/\.exe$/iu, ''), {}), process.execPath);
+  assert.equal(resolveWindowsExecutable('missing-zellij-executable', {}), 'missing-zellij-executable');
 });
 
 test('Windows console bootstrap preserves argv, bounds output, cancels and releases workers', {

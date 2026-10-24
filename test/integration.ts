@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { spawn as spawnPty } from 'node-pty';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { resolveWindowsExecutable } from '../src/windows-console.ts';
 
 async function waitFor<T>(read: () => Promise<T>, ready: (value: T) => boolean): Promise<T> {
   for (let attempt = 0; attempt < 100; attempt++) {
@@ -76,7 +77,8 @@ test('real Zellij: background session, tabs, panes, I/O, subscriptions and lifec
     await client.createSession(name);
     // Real terminal dimensions are needed for new-tab layouts in Zellij 0.45.1.
     // Keep a test client in its own PTY; never attach to the developer's terminal.
-    const terminal = spawnPty(config.binary, ['attach', name], {
+    const terminalBinary = process.platform === 'win32' ? resolveWindowsExecutable(config.binary, env) : config.binary;
+    const terminal = spawnPty(terminalBinary, ['attach', name], {
       name: 'xterm-256color', cols: 160, rows: 50, cwd: process.cwd(), env,
     });
     let terminalOutput = '';

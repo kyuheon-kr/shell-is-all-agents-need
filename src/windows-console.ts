@@ -1,6 +1,26 @@
 import { stripVTControlCharacters } from 'node:util';
 import { ZellijError } from './errors.ts';
 import type { RunOptions } from './runner.ts';
+import { statSync } from 'node:fs';
+import { win32 } from 'node:path';
+
+/** node-pty's native resolver neither appends .exe nor reliably handles a
+ * relative executable or the final PATH entry. Resolve without invoking a shell. */
+export function resolveWindowsExecutable(binary: string, env: NodeJS.ProcessEnv, cwd = process.cwd()): string {
+  const pathKey = Object.keys(env).find(key => key.toUpperCase() === 'PATH');
+  const directories = win32.isAbsolute(binary) || /[/\\]/u.test(binary)
+    ? [cwd]
+    : [cwd, ...(env[pathKey ?? 'PATH'] ?? '').split(';').filter(Boolean).map(value => value.replace(/^"(.*)"$/u, '$1'))];
+  const names = win32.extname(binary) ? [binary] : [binary, `${binary}.exe`, `${binary}.com`];
+  for (const directory of directories) {
+    for (const name of names) {
+      const path = win32.resolve(directory, name);
+      try { if (statSync(path).isFile()) return path; } catch {}
+    }
+  }
+  // Preserve the asynchronous BINARY_NOT_FOUND behavior of the normal runner.
+  return binary;
+}
 
 /** Zellij's Windows background-session bootstrap requires valid console
  * handles. An isolated ConPTY supplies them without opening a visible window
@@ -12,7 +32,7 @@ export async function runWindowsConsole(binary: string, args: string[], env: Nod
   if (options.signal?.aborted) throw new ZellijError('CANCELLED', 'Operation cancelled');
   return new Promise((resolve, reject) => {
     let terminal: ReturnType<typeof spawn>;
-    try { terminal = spawn(binary, args, { env, cols: 160, rows: 50, name: 'xterm-256color', useConpty: true }); }
+    try { terminal = spawn(resolveWindowsExecutable(binary, env), args, { env, cols: 160, rows: 50, name: 'xterm-256color', useConpty: true }); }
     catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       reject(new ZellijError(/file not found|cannot find|ENOENT/iu.test(message) ? 'BINARY_NOT_FOUND' : 'CLI_ERROR', message));
