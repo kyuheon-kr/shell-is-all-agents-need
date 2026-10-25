@@ -58,7 +58,7 @@ export function registerTools(server: McpServer, client: ZellijClient, subscript
 
   add('list_tabs', 'List tabs and their stable IDs and metadata.', { session },
     (a, signal) => client.listTabs(a.session, signal), true);
-  add('create_tab', 'Create a tab, optionally running a command directly. Returns its stable ID without waiting for command exit.', { session, ...creation },
+  add('create_tab', 'Create a tab, optionally running a command directly. Returns its ID without waiting for command exit. OPERATION_UNCERTAIN means inspect tabs before retrying; the creation may already have happened.', { session, ...creation },
     (a, signal) => client.createTab(a, a.session, signal));
   add('rename_tab', 'Rename the explicitly identified tab.', { session, tab_id, name },
     (a, signal) => client.tabAction('rename', a.tab_id, a.session, a.name, signal));
@@ -69,7 +69,7 @@ export function registerTools(server: McpServer, client: ZellijClient, subscript
 
   add('list_panes', 'List typed pane IDs and metadata, optionally filtered by stable tab ID.', { session, tab_id: tab_id.optional() },
     (a, signal) => client.listPanes(a.session, a.tab_id, signal), true);
-  add('create_pane', 'Create a terminal pane in a tab without focus by default. Direction is a Zellij tab placement hint, not a split of an arbitrary pane ID.', {
+  add('create_pane', 'Create a terminal pane in a tab without focus by default. Direction is a tab placement hint. OPERATION_UNCERTAIN means inspect panes before retrying; the creation may already have happened.', {
     session, tab_id, ...creation, direction: z.enum(['right', 'down']).optional(),
   }, (a, signal) => client.createPane(a.tab_id, a, a.session, signal));
   add('rename_pane', 'Rename the explicitly identified pane.', { session, pane_id, name },

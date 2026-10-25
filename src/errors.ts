@@ -2,7 +2,7 @@ export type ErrorCode =
   | 'INVALID_ARGUMENT' | 'ACCESS_DENIED' | 'NO_DEFAULT_SESSION'
   | 'NOT_FOUND' | 'ALREADY_EXISTS' | 'CLI_ERROR' | 'TIMEOUT'
   | 'CANCELLED' | 'BINARY_NOT_FOUND' | 'UNSUPPORTED_VERSION'
-  | 'INVALID_OUTPUT' | 'RESOURCE_LIMIT';
+  | 'INVALID_OUTPUT' | 'RESOURCE_LIMIT' | 'OPERATION_UNCERTAIN';
 
 export class ZellijError extends Error {
   readonly code: ErrorCode;
