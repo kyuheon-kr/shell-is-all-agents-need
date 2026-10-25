@@ -116,3 +116,18 @@ test('cursor and limits are validated, shutdown rejects new collectors, session 
   manager.dispose();
   await assert.rejects(manager.subscribe(['terminal_1']), /shutting down/);
 });
+
+test('unsubscribe releases inherited pipe handles even after the collector process exits', async () => {
+  const { client, children } = setup();
+  const manager = new SubscriptionManager(client);
+  const sub = await manager.subscribe(['terminal_1']);
+  const child = children[0]!;
+  // exitCode can be set before close when inherited streams remain open.
+  child.exitCode = 0;
+  const pending = manager.readEvents(sub.subscription_id, 0, 100, 30_000);
+  manager.unsubscribe(sub.subscription_id);
+  assert.equal((await pending).status, 'stopped');
+  assert.ok(child.stdin.destroyed && child.stdout.destroyed && child.stderr.destroyed);
+  assert.deepEqual(child.kills, []);
+  manager.dispose();
+});

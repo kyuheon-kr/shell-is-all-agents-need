@@ -191,6 +191,9 @@ export class SubscriptionManager {
   }
 
   private stopChild(sub: Subscription): void {
+    // Even an exited collector may have descendants holding these pipe ends.
+    // Unsubscribe/dispose must release the host's handles independently.
+    sub.child.stdin.destroy(); sub.child.stdout.destroy(); sub.child.stderr.destroy();
     if (sub.child.exitCode !== null || sub.child.signalCode !== null) return;
     sub.child.kill('SIGTERM');
     sub.killTimer ??= setTimeout(() => sub.child.kill('SIGKILL'), 250);
