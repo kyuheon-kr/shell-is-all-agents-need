@@ -6,10 +6,12 @@ export type ErrorCode =
 
 export class ZellijError extends Error {
   readonly code: ErrorCode;
-  constructor(code: ErrorCode, message: string) {
+  readonly details?: Record<string, unknown>;
+  constructor(code: ErrorCode, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = 'ZellijError';
     this.code = code;
+    this.details = details;
   }
 }
 

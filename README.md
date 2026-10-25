@@ -32,6 +32,8 @@ The current session is detected automatically, including through a shared Codex 
 
 More options: `shell-is-all-agents-need --help`.
 
+Pane programs run as long as needed. Control-request deadlines are configurable; see [runtime controls](https://github.com/kyuheon-kr/shell-is-all-agents-need/blob/main/docs/runtime.md).
+
 <details>
 <summary>Platform notes</summary>
 

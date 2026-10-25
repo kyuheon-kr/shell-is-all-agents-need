@@ -32,6 +32,7 @@ export function registerTools(server: McpServer, client: ZellijClient, subscript
         const output = { error: {
           code: error instanceof ZellijError ? error.code : error instanceof z.ZodError ? 'INVALID_ARGUMENT' : 'CLI_ERROR',
           message: error instanceof Error ? error.message : String(error),
+          ...(error instanceof ZellijError && error.details ? { details: error.details } : {}),
         } };
         return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent: output };
       }
