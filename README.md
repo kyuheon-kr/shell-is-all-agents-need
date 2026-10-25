@@ -2,7 +2,7 @@
 
 **A shell is all agents need.**
 
-An MCP server for sharing a live Zellij terminal with your AI agent. Read screens, type commands, run interactive programs, and manage sessions, tabs, and panes. You can step in and use the same keyboard anytime.
+**Built on [Zellij](https://zellij.dev/), the terminal multiplexer.** This MCP server lets AI agents control Zellij sessions, tabs, and panes while you use the same live terminal. Read screens, type commands, and run interactive programs together. Zellij must be installed and running to interact with a session.
 
 Inspired by browser-use and [shell-use](https://github.com/kyuheon-kr/shell-use).
 
@@ -26,7 +26,7 @@ npm install -g shell-is-all-agents-need
 codex mcp add shell-is-all-agents-need -- shell-is-all-agents-need
 ```
 
-Restart your MCP host and launch it inside a Zellij pane. Then ask: “Open a shared shell on the right and start a Python REPL.”
+Start Zellij with `zellij`, then launch your MCP host (for example, `codex`) inside one of its panes. Restart the host after registering the server. Then ask: “Open a shared shell on the right and start a Python REPL.”
 
 The current session is detected automatically, including through a shared Codex daemon when its clients agree on one session. If detection is unavailable or ambiguous, append `--allowed-sessions dev,work --session work` to the registration command. The first listed session is the default unless `--session` is supplied; the detected current session is always allowed.
 
