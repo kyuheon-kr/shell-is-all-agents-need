@@ -29,6 +29,7 @@
     "test": "node --test --test-isolation=none test/*.test.ts",
     "test:integration": "node test/integration.ts",
     "test:package": "node test/package.ts",
+    "release:prepare": "node scripts/release-prepare.mjs",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {

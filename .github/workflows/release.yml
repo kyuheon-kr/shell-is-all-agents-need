@@ -1,35 +1,83 @@
 name: Release
 
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version already merged into main (for example 1.0.2)
+        required: true
+        type: string
+      dry_run:
+        description: Validate and pack without publishing or creating a release
+        type: boolean
+        default: true
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  validate:
     runs-on: ubuntu-latest
     steps:
+      - name: Require main
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: test "$RELEASE_REF" = refs/heads/main
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Verify published version and create GitHub Release
+      - name: Verify the requested version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/release-state.mjs validate
+  ci:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@12.2.1
+      - run: npm ci
+      - name: Pack and verify release state
+        id: package
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: node scripts/release-state.mjs prepare
+      - name: Publish preview
+        if: inputs.dry_run
+        env:
+          TARBALL: ${{ steps.package.outputs.tarball }}
+        run: npm publish "$TARBALL" --dry-run --access public
+      - name: Publish to npm using OIDC
+        if: ${{ !inputs.dry_run && steps.package.outputs.published != 'true' }}
+        env:
+          TARBALL: ${{ steps.package.outputs.tarball }}
+        run: npm publish "$TARBALL" --access public --provenance
+      - name: Verify public artifact and create GitHub Release
+        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        shell: bash
-        run: |
-          version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')
-          test "$GITHUB_REF_NAME" = "v$version"
-          test "$(npm view "shell-is-all-agents-need@$version" version)" = "$version"
-          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then exit 0; fi
-          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
-          Share live Zellij terminals with AI agents on Linux and Windows, including shared-daemon session detection and pane-based agent orchestration.
-
-          Install: \`npm install -g shell-is-all-agents-need@$version\`
-
-          Requires Node.js 24+ and Zellij 0.45.1+. See the [README](https://github.com/$GH_REPO#readme) for MCP setup.
-          EOF
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"
+          RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_INTEGRITY: ${{ steps.package.outputs.integrity }}
+        run: node scripts/release-state.mjs finish

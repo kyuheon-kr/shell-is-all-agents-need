@@ -66,3 +66,5 @@ npm run test:package      # Install the tarball and check the CLI + MCP
 ```
 
 For a local MCP registration, use `node "$PWD/bin/shell-is-all-agents-need.js"`. Integration tests create temporary sessions and clean them up afterward; they skip locally if Zellij is missing. Set `SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN` for a binary outside PATH. CI runs all checks on Linux and Windows.
+
+Develop on branches and open a PR; Linux and Windows CI must pass before merging into `main`. Version PRs and optional npm/GitHub releases follow [the release guide](docs/releasing.md).

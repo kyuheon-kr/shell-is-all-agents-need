@@ -1,6 +1,7 @@
 # Working agreements
 
-- Finish requested changes by committing and pushing them to the current branch. Do not ask for routine confirmation. Follow any explicit user request to use another branch, hold a push, or leave changes uncommitted. Merge only when requested.
+- Develop on a task branch and finish requested changes by committing, pushing that branch, and opening a pull request against `main`. Never push changes directly to `main`. Do not ask for routine confirmation; follow explicit requests to hold a push or leave changes uncommitted.
+- Merge only when requested, through a pull request with required CI passing. Never bypass branch protection. Releases and npm publishing are separate, explicitly requested operations; follow `docs/releasing.md`.
 - Stage only files belonging to the task. Preserve unrelated user changes; never discard them or force-push without explicit authorization.
 - Report the resulting branch, commit hash, push status, and relevant validation results when finishing.
 - Keep the README compact. Prioritize quick setup, major use cases, and essential commands; avoid duplicating tool descriptions or lengthy implementation details.
