@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import { ZellijError } from './errors.ts';
 import type { ZellijClient } from './zellij.ts';
 import type { SubscriptionManager } from './subscriptions.ts';
+import { MAX_RESULT_BYTES, resultBytes, toolResult } from './output.ts';
 
 export function registerTools(server: McpServer, client: ZellijClient, subscriptions: SubscriptionManager): void {
   const session = z.string().min(1).optional().describe('Allowed session name; defaults to the session fixed at server startup.');
@@ -27,14 +28,16 @@ export function registerTools(server: McpServer, client: ZellijClient, subscript
       try {
         const output = await handler(schema.parse(args), ctx.mcpReq.signal);
         const structuredContent = output as Record<string, unknown>;
-        return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent };
+        if (resultBytes(structuredContent) > MAX_RESULT_BYTES) throw new ZellijError('RESOURCE_LIMIT', 'Response exceeds 2MiB; narrow the target or request fewer items');
+        return toolResult(structuredContent);
       } catch (error) {
         const output = { error: {
           code: error instanceof ZellijError ? error.code : error instanceof z.ZodError ? 'INVALID_ARGUMENT' : 'CLI_ERROR',
-          message: error instanceof Error ? error.message : String(error),
+          message: (error instanceof Error ? error.message : String(error)).slice(0, 4096),
           ...(error instanceof ZellijError && error.details ? { details: error.details } : {}),
         } };
-        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify(output) }], structuredContent: output };
+        if (resultBytes(output) > MAX_RESULT_BYTES) delete output.error.details;
+        return toolResult(output, true);
       }
     });
   }
@@ -86,7 +89,7 @@ export function registerTools(server: McpServer, client: ZellijClient, subscript
   add('send_keys', 'Send a sequence of Zellij keys such as Enter, Ctrl c, Left, or Alt x to an explicit pane.', {
     session, pane_id, keys: z.array(z.string().min(1).max(128)).min(1).max(256),
   }, (a, signal) => client.sendKeys(a.pane_id, a.keys, a.session, signal), false, true);
-  add('capture', 'Read rendered screen text without changing focus or scroll position. Optionally include scrollback; returns the most recent requested lines.', {
+  add('capture', 'Read rendered screen text without changing focus or scroll position. Returns the latest lines within a byte budget; truncated indicates omitted lines or bytes.', {
     session, pane_id, scrollback: z.boolean().default(false),
     lines: z.number().int().min(1).max(10_000).default(200), ansi: z.boolean().default(false),
   }, (a, signal) => client.capture(a.pane_id, a, a.session, signal), true);
@@ -95,7 +98,7 @@ export function registerTools(server: McpServer, client: ZellijClient, subscript
     session, pane_ids: z.array(pane_id).min(1).max(256),
     scrollback_lines: z.number().int().min(0).max(10_000).default(0),
   }, (a, signal) => subscriptions.subscribe(a.pane_ids, a.session, a.scrollback_lines, signal));
-  add('read_events', 'Read events after a subscription-local cursor without consuming them. Optionally wait up to 30s. gap means earlier events were evicted; next_cursor resumes reading. Other tools remain available.', {
+  add('read_events', 'Read events after a subscription-local cursor without consuming them. Optionally wait up to 30s. gap indicates eviction; truncated updates omit older screen content. has_more indicates another page; resume with next_cursor. Other tools remain available.', {
     subscription_id: z.string().uuid(), cursor: z.number().int().nonnegative(),
     limit: z.number().int().min(1).max(1_000).default(100),
     timeout_ms: z.number().int().min(0).max(30_000).default(0),

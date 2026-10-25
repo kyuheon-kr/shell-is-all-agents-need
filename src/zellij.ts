@@ -4,6 +4,7 @@ import { SessionScope } from './config.ts';
 import type { Config } from './config.ts';
 import { fail, integer, literal, paneId, ZellijError } from './errors.ts';
 import type { Runner } from './runner.ts';
+import { boundedText } from './output.ts';
 
 export type Metadata = Record<string, unknown>;
 export interface Pane extends Metadata { pane_id: string }
@@ -277,6 +278,8 @@ export class ZellijClient {
     let text = await this.action(target, args, signal);
     if (!options.ansi) text = stripVTControlCharacters(text);
     const lines = text.replace(/\r\n/gu, '\n').replace(/\n$/u, '').split('\n');
-    return { session: target, pane_id: id, text: lines.slice(-limit).join('\n'), truncated: lines.length > limit };
+    return boundedText(lines.slice(-limit).join('\n'), (tail, clipped) => ({
+      session: target, pane_id: id, text: tail, truncated: clipped || lines.length > limit,
+    }));
   }
 }
