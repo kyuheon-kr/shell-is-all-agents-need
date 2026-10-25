@@ -13,7 +13,7 @@ Inspired by browser-use and [shell-use](https://github.com/kyuheon-kr/shell-use)
 
 Try: “Start three Codex agents in separate panes: one to inspect the code, one to review tests, and one to check the docs. Collect their findings and have them cross-review.”
 
-Give each worker an explicit working directory and completion marker. Use separate worktrees when workers edit files. The orchestrator must read pane updates and send follow-ups; subscriptions do not automatically wake agents or deliver instructions.
+Give each worker an explicit working directory and completion marker; use separate worktrees for edits. See the [orchestration walkthrough](https://github.com/kyuheon-kr/shell-is-all-agents-need/blob/main/docs/orchestration.md) for launching, observing, cross-reviewing, and cleaning up workers.
 
 ## Quick start
 
@@ -70,4 +70,4 @@ npm run test:package      # Install the tarball and check the CLI + MCP
 
 For a local MCP registration, use `node "$PWD/bin/shell-is-all-agents-need.js"`. Integration tests create temporary sessions and clean them up afterward; they skip locally if Zellij is missing. Set `SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN` for a binary outside PATH. CI runs all checks on Linux and Windows.
 
-Develop on branches and open a PR; Linux and Windows CI must pass before merging into `main`. Version PRs and optional npm/GitHub releases follow [the release guide](docs/releasing.md).
+Develop on branches and open a PR; Linux and Windows CI must pass before merging into `main`. Version PRs and optional npm/GitHub releases follow [the release guide](https://github.com/kyuheon-kr/shell-is-all-agents-need/blob/main/docs/releasing.md).
