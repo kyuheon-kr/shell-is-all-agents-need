@@ -12,7 +12,7 @@ import { help, readCliConfig } from './cli.ts';
 export function createServer(config: Config = readRuntimeConfig(), runner: Runner = createRunner(config.binary)) {
   const client = new ZellijClient(config, runner);
   const subscriptions = new SubscriptionManager(client);
-  const server = new McpServer({ name: 'shell-is-all-agents-need', version: '0.1.0' }, {
+  const server = new McpServer({ name: 'shell-is-all-agents-need', version: '1.0.0' }, {
     instructions: 'Manage Zellij sessions, tabs and panes and interact with terminal programs. '
       + 'Use explicit stable tab IDs and typed pane IDs. Observation is rendered screen state, not a command log or human input log. '
       + 'Human users share these panes and may intervene at any time. send_text defaults to paste without Enter. '

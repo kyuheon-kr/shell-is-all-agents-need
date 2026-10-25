@@ -1,6 +1,6 @@
 {
   "name": "shell-is-all-agents-need",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Let AI agents work interactively in a shared terminal with humans",
   "type": "module",
   "private": true,
