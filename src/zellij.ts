@@ -4,6 +4,7 @@ import { SessionScope } from './config.ts';
 import type { Config } from './config.ts';
 import { fail, integer, literal, paneId, ZellijError } from './errors.ts';
 import type { Runner } from './runner.ts';
+import { boundedText } from './output.ts';
 
 export type Metadata = Record<string, unknown>;
 export interface Pane extends Metadata { pane_id: string }
@@ -182,12 +183,39 @@ export class ZellijClient {
     return result.session;
   }
 
+  private async createIdentity<T extends string | number>(operation: 'create_tab' | 'create_pane', session: string,
+    inspect: () => Promise<T[]>, invoke: () => Promise<string>, parse: (output: string) => T, signal?: AbortSignal): Promise<T> {
+    const before = await inspect();
+    try { return parse((await invoke()).trim()); }
+    catch (error) {
+      if (!(error instanceof ZellijError) || error.code === 'BINARY_NOT_FOUND') throw error;
+      let candidates: T[] | undefined;
+      // A successful command with a missing ID can be reconciled through reads.
+      // Newly observed IDs are advisory: a human may have created them too.
+      // Cancellation and timeout must return promptly, without more CLI calls.
+      if (error.code === 'INVALID_OUTPUT' && !signal?.aborted) {
+        try { candidates = (await inspect()).filter(id => !before.includes(id)); } catch {}
+      }
+      const tool = operation === 'create_tab' ? 'list_tabs' : 'list_panes';
+      throw new ZellijError('OPERATION_UNCERTAIN', `${operation} may already have completed. Inspect ${tool} before deciding what to do; do not automatically repeat the creation.`, {
+        ...error.details, cause_code: error.code, operation, session, may_have_completed: true, retry_safe: false,
+        before_ids: before.slice(0, 256), before_ids_truncated: before.length > 256,
+        ...(candidates ? { observed_new_ids: candidates.slice(0, 256), candidates_truncated: candidates.length > 256 } : {}),
+        recovery: { tool, arguments: { session } },
+      });
+    }
+  }
+
   async createTab(options: CreateOptions, session?: string, signal?: AbortSignal): Promise<{ session: string; tab_id: number }> {
     const args = createArgs(options);
     const target = await this.requireSession(session, signal);
-    const output = (await this.action(target, ['new-tab', ...args], signal)).trim();
-    if (!/^\d+$/u.test(output)) fail('INVALID_OUTPUT', 'Zellij did not return a tab ID');
-    return { session: target, tab_id: integer(Number(output), 'tab_id') };
+    const tabId = await this.createIdentity('create_tab', target,
+      async () => (await this.listTabs(target, signal)).tabs.map(tab => tab.tab_id),
+      () => this.action(target, ['new-tab', ...args], signal), output => {
+        if (!/^\d+$/u.test(output)) fail('INVALID_OUTPUT', 'Zellij did not return a tab ID');
+        return integer(Number(output), 'tab_id');
+      }, signal);
+    return { session: target, tab_id: tabId };
   }
 
   async createPane(tabId: number, options: CreateOptions & { direction?: 'right' | 'down' }, session?: string, signal?: AbortSignal): Promise<{ session: string; pane_id: string }> {
@@ -196,9 +224,13 @@ export class ZellijClient {
     if (options.direction) args.push('--direction', options.direction);
     args.push(...createArgs(options));
     const target = await this.requireTab(tabId, session, signal);
-    const output = (await this.action(target, args, signal)).trim();
-    if (!/^terminal_\d+$/u.test(output)) fail('INVALID_OUTPUT', 'Zellij did not return a terminal pane ID');
-    return { session: target, pane_id: output };
+    const id = await this.createIdentity('create_pane', target,
+      async () => (await this.listPanes(target, tabId, signal)).panes.map(pane => pane.pane_id),
+      () => this.action(target, args, signal), output => {
+        if (!/^terminal_\d+$/u.test(output)) fail('INVALID_OUTPUT', 'Zellij did not return a terminal pane ID');
+        return output;
+      }, signal);
+    return { session: target, pane_id: id };
   }
 
   async tabAction(operation: 'rename' | 'close' | 'focus', tabId: number, session?: string, name?: string, signal?: AbortSignal): Promise<{ session: string; tab_id: number }> {
@@ -277,6 +309,8 @@ export class ZellijClient {
     let text = await this.action(target, args, signal);
     if (!options.ansi) text = stripVTControlCharacters(text);
     const lines = text.replace(/\r\n/gu, '\n').replace(/\n$/u, '').split('\n');
-    return { session: target, pane_id: id, text: lines.slice(-limit).join('\n'), truncated: lines.length > limit };
+    return boundedText(lines.slice(-limit).join('\n'), (tail, clipped) => ({
+      session: target, pane_id: id, text: tail, truncated: clipped || lines.length > limit,
+    }));
   }
 }

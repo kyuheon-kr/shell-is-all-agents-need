@@ -70,7 +70,8 @@ export async function runWindowsConsole(binary: string, args: string[], env: Nod
       if (event.exitCode !== 0) reject(new ZellijError('CLI_ERROR', text.trim() || `Zellij exited: ${event.exitCode}`));
       else resolve(text);
     });
-    const timer = setTimeout(() => stop(new ZellijError('TIMEOUT', 'Zellij CLI timed out')), options.timeoutMs ?? 10_000);
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const timer = timeoutMs === 0 ? undefined : setTimeout(() => stop(new ZellijError('TIMEOUT', `Zellij CLI timed out after ${timeoutMs}ms`)), timeoutMs);
     options.signal?.addEventListener('abort', abort, { once: true });
     if (options.signal?.aborted) abort();
   });

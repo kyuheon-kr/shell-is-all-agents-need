@@ -1,0 +1,15 @@
+# Runtime controls
+
+On npm 12+, global installs require explicit permission for native install scripts. If Windows session creation reports missing `node-pty`, reinstall with `npm install -g --allow-scripts=node-pty shell-is-all-agents-need`. Keep optional dependencies enabled. Older npm versions can use the ordinary global install command.
+
+Run `shell-is-all-agents-need --doctor` for read-only JSON diagnostics. It reports Node/Zellij versions, the source of session detection (environment, ancestor, shared client, ambiguity, or unresolved), configured scope/default, control deadline, and Windows helper/native dependency availability. Session options work with `--doctor` too. Exit status is 1 for configuration/dependency errors and 0 when those checks pass. A stopped allowed session produces a warning because it can still be created. The report never prints complete process environments or authentication data.
+
+Pane programs have no execution deadline: keep servers, REPLs, and agents running and use `capture` or subscriptions to observe them. These are snapshots of rendered terminal state, not command-completion signals.
+
+Zellij control requests have a default 10-second deadline. Set `SHELL_IS_ALL_AGENTS_NEED_TIMEOUT_MS` in the MCP server environment to another nonnegative integer in milliseconds, or `0` to disable that deadline. MCP hosts can have their own request deadlines. Cancellation remains available even with the CLI deadline disabled.
+
+A timeout or cancellation releases the request's pipes and terminates its CLI process, without killing unrelated background servers or pane programs. Errors include bounded `partial_stdout` and `partial_stderr` diagnostics when available; partial output is not returned as a successful screen capture. Read operations can be requested again. A modifying operation may already have happened, so inspect the session/panes before retrying it.
+
+MCP results are limited to 2MiB including both text and structured JSON. `capture.truncated` reports omitted lines or bytes and preserves the latest text. Oversized subscription updates preserve the tail of the viewport/scrollback and include `truncated` and `original_bytes`. `read_events` pages by bytes and event count; follow `next_cursor` while `has_more` is true. `gap` separately reports events evicted from the collector's buffer. Narrow large metadata queries when they return `RESOURCE_LIMIT`.
+
+If a tab/pane creation was dispatched but its ID cannot be confirmed, the error is `OPERATION_UNCERTAIN`. Its details include the original error code, a pre-creation ID snapshot, `retry_safe: false`, and a read-only recovery tool call. Missing-ID replies also attempt a fresh list and report `observed_new_ids`. These are candidates, not proof of ownership: another person or agent may have created them. Inspect their metadata before using or closing anything. Timeout/cancellation returns without starting more recovery queries. Never automatically replay a creation or delete candidate panes to resolve uncertainty.

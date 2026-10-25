@@ -35,7 +35,7 @@ test('metadata queries do not retry malformed nonempty JSON or replay a failed m
   const { client, calls } = setup(args => args[3] === 'list-panes' ? '{broken' : args[3] === 'new-tab' ? '' : undefined);
   await assert.rejects(client.listPanes(), error => code('INVALID_OUTPUT')(error) && (error as Error).message.includes('"{broken"'));
   assert.equal(calls.filter(args => args[3] === 'list-panes').length, 1);
-  await assert.rejects(client.createTab({}), code('INVALID_OUTPUT'));
+  await assert.rejects(client.createTab({}), code('OPERATION_UNCERTAIN'));
   assert.equal(calls.filter(args => args[3] === 'new-tab').length, 1);
 });
 

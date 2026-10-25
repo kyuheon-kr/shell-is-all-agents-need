@@ -3,10 +3,11 @@ import { StringDecoder } from 'node:string_decoder';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { fail, integer, ZellijError } from './errors.ts';
 import type { ZellijClient } from './zellij.ts';
+import { MAX_EVENT_BYTES, MAX_RESULT_BYTES, resultBytes, utf8Tail } from './output.ts';
 
 export type PaneEvent = {
   event: 'pane_update'; pane_id: string; viewport: string[];
-  scrollback: string[] | null; is_initial: boolean;
+  scrollback: string[] | null; is_initial: boolean; truncated?: boolean; original_bytes?: number;
 } | { event: 'pane_closed'; pane_id: string };
 export type OutputEvent = PaneEvent & { sequence: number; received_at: string };
 type Status = 'running' | 'closed' | 'stopped' | 'error';
@@ -17,6 +18,18 @@ interface Subscription {
   wake: Set<() => void>; killTimer?: ReturnType<typeof setTimeout>;
 }
 export interface SubscriptionLimits { maxEvents?: number; maxBytes?: number; maxSubscriptions?: number }
+
+function boundedEvent(value: OutputEvent): OutputEvent {
+  if (value.event !== 'pane_update' || resultBytes(value) <= MAX_EVENT_BYTES) return value;
+  const originalBytes = Buffer.byteLength(JSON.stringify(value));
+  for (let budget = 64 * 1024; budget >= 1; budget = Math.floor(budget / 2)) {
+    const clipped = { ...value, viewport: utf8Tail(value.viewport.join('\n'), budget).split('\n'),
+      scrollback: value.scrollback === null ? null : utf8Tail(value.scrollback.join('\n'), budget).split('\n'),
+      truncated: true, original_bytes: originalBytes };
+    if (resultBytes(clipped) <= MAX_EVENT_BYTES) return clipped;
+  }
+  throw new ZellijError('RESOURCE_LIMIT', 'Pane update metadata exceeds its byte budget');
+}
 
 function parseEvent(line: string, ids: ReadonlySet<string>): PaneEvent {
   let value: unknown;
@@ -78,7 +91,7 @@ export class SubscriptionManager {
     const append = (line: string) => {
       if (!line.trim() || sub.status !== 'running') return;
       try {
-        const value: OutputEvent = { ...parseEvent(line, ids), sequence: ++sub.sequence, received_at: new Date().toISOString() };
+        const value = boundedEvent({ ...parseEvent(line, ids), sequence: ++sub.sequence, received_at: new Date().toISOString() });
         const bytes = Buffer.byteLength(JSON.stringify(value));
         sub.events.push({ value, bytes });
         sub.bytes += bytes;
@@ -145,13 +158,24 @@ export class SubscriptionManager {
       });
     }
     const first = sub.events[0]?.value.sequence ?? sub.sequence + 1;
-    const events = sub.events.filter(event => event.value.sequence > cursor).slice(0, limit).map(event => event.value);
-    return {
+    const events: OutputEvent[] = [];
+    const response = () => ({
       subscription_id: id, session: sub.session, status: sub.status,
       events, next_cursor: events.at(-1)?.sequence ?? Math.max(cursor, first - 1),
       first_available_cursor: first - 1, gap: cursor < first - 1,
+      has_more: (events.at(-1)?.sequence ?? Math.max(cursor, first - 1)) < sub.sequence,
       ...(sub.error ? { error: sub.error } : {}),
+    });
+    let bytes = resultBytes(response()) + 256; // Cursor digit growth and separators.
+    for (const event of sub.events) {
+      if (event.value.sequence <= cursor) continue;
+      if (events.length >= limit) break;
+      const weight = resultBytes(event.value);
+      if (bytes + weight > MAX_RESULT_BYTES) break;
+      events.push(event.value);
+      bytes += weight;
     };
+    return response();
   }
 
   unsubscribe(id: string): { subscription_id: string; status: 'stopped' } {
@@ -167,6 +191,9 @@ export class SubscriptionManager {
   }
 
   private stopChild(sub: Subscription): void {
+    // Even an exited collector may have descendants holding these pipe ends.
+    // Unsubscribe/dispose must release the host's handles independently.
+    sub.child.stdin.destroy(); sub.child.stdout.destroy(); sub.child.stderr.destroy();
     if (sub.child.exitCode !== null || sub.child.signalCode !== null) return;
     sub.child.kill('SIGTERM');
     sub.killTimer ??= setTimeout(() => sub.child.kill('SIGKILL'), 250);

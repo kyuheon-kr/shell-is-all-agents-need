@@ -2,14 +2,16 @@ export type ErrorCode =
   | 'INVALID_ARGUMENT' | 'ACCESS_DENIED' | 'NO_DEFAULT_SESSION'
   | 'NOT_FOUND' | 'ALREADY_EXISTS' | 'CLI_ERROR' | 'TIMEOUT'
   | 'CANCELLED' | 'BINARY_NOT_FOUND' | 'UNSUPPORTED_VERSION'
-  | 'INVALID_OUTPUT' | 'RESOURCE_LIMIT';
+  | 'INVALID_OUTPUT' | 'RESOURCE_LIMIT' | 'OPERATION_UNCERTAIN';
 
 export class ZellijError extends Error {
   readonly code: ErrorCode;
-  constructor(code: ErrorCode, message: string) {
+  readonly details?: Record<string, unknown>;
+  constructor(code: ErrorCode, message: string, details?: Record<string, unknown>) {
     super(message);
     this.name = 'ZellijError';
     this.code = code;
+    this.details = details;
   }
 }
 

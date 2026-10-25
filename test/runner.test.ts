@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRunner } from '../src/runner.ts';
+import { controlTimeout, createRunner } from '../src/runner.ts';
 import { ZellijError } from '../src/errors.ts';
 import { lstatSync } from 'node:fs';
 import { pasteChunks } from '../src/zellij.ts';
@@ -8,6 +8,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { resolveWindowsExecutable } from '../src/windows-console.ts';
 import { win32 } from 'node:path';
+import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const code = (expected: string) => (error: unknown) => error instanceof ZellijError && error.code === expected;
 
@@ -61,6 +65,52 @@ test('runner abort handles both already aborted and running subprocesses', async
 
 test('runner bounds subprocess output', async () => {
   await assert.rejects(createRunner(process.execPath).run(['-e', 'require("node:fs").writeSync(1,"x".repeat(1000))'], { maxBytes: 20 }), code('RESOURCE_LIMIT'));
+});
+
+test('control deadlines are configurable, may be disabled, and reject invalid values', async () => {
+  assert.equal(controlTimeout({}), 10_000);
+  assert.equal(controlTimeout({ SHELL_IS_ALL_AGENTS_NEED_TIMEOUT_MS: '0' }), 0);
+  for (const value of ['-1', '', 'NaN', '1.5', '2147483648']) {
+    assert.throws(() => controlTimeout({ SHELL_IS_ALL_AGENTS_NEED_TIMEOUT_MS: value }), code('INVALID_ARGUMENT'));
+  }
+  const output = await createRunner(process.execPath, { ...process.env, SHELL_IS_ALL_AGENTS_NEED_TIMEOUT_MS: '0' })
+    .run(['-e', 'setTimeout(()=>process.stdout.write("done"),100)']);
+  assert.equal(output, 'done');
+  const controller = new AbortController();
+  const pending = createRunner(process.execPath).run(['-e', 'setInterval(()=>{},1000)'], { timeoutMs: 0, signal: controller.signal });
+  controller.abort();
+  await assert.rejects(pending, code('CANCELLED'));
+});
+
+test('cancellation releases inherited pipes without killing a detached pane/server process', { timeout: 10_000 }, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'shell-agents-inherited-pipe-'));
+  const ready = join(directory, 'ready');
+  let grandchild: number | undefined;
+  const controller = new AbortController();
+  try {
+    const source = `
+      const child=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:['ignore',1,2]});
+      child.unref();
+      process.stdout.write('partial screen');
+      require('node:fs').writeFileSync(process.argv[1],String(child.pid));
+      setTimeout(()=>process.exit(0),20);
+    `;
+    const pending = createRunner(process.execPath).run(['-e', source, ready], { signal: controller.signal, timeoutMs: 5000 });
+    const rejection = assert.rejects(pending, (error: unknown) => error instanceof ZellijError
+      && error.code === 'CANCELLED' && error.details?.partial_stdout === 'partial screen');
+    for (let i = 0; !existsSync(ready) && i < 100; i++) await delay(20);
+    grandchild = Number(readFileSync(ready, 'utf8'));
+    await delay(100);
+    const started = Date.now();
+    controller.abort();
+    await rejection;
+    assert.ok(Date.now() - started < 1000, 'Cancellation must not await inherited pipe closure');
+    assert.doesNotThrow(() => process.kill(grandchild!, 0), 'The background process must survive CLI cancellation');
+  } finally {
+    controller.abort();
+    if (grandchild) { try { process.kill(grandchild, 'SIGKILL'); } catch {} }
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test('Windows argv preserves large Unicode pastes with quotes and backslashes', { skip: process.platform !== 'win32', timeout: 30_000 }, async () => {
