@@ -1,6 +1,15 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -52,3 +61,13 @@ jobs:
           $directory >> $env:GITHUB_PATH
       - run: npm run test:integration
       - run: npm run test:package
+  required:
+    name: CI required
+    if: always()
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every platform to pass
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: test "$CHECK_RESULT" = success
