@@ -1,6 +1,6 @@
 {
   "name": "shell-is-all-agents-need",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Let AI agents work interactively in a shared terminal with humans",
   "type": "module",
   "repository": "github:kyuheon-kr/shell-is-all-agents-need",
