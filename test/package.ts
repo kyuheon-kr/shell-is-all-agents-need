@@ -55,6 +55,12 @@ test('global install, documented command, Codex registration and MCP handshake',
       process.platform === 'win32' ? ['/d', '/s', '/c', 'shell-is-all-agents-need --help'] : ['-c', 'shell-is-all-agents-need --help'],
       { cwd: consumer, env, encoding: 'utf8', timeout: 15_000 });
     assert.match(help, /Usage: shell-is-all-agents-need/);
+    const diagnostic = JSON.parse(execFileSync(process.platform === 'win32' ? (env.ComSpec || env.COMSPEC || 'cmd.exe') : '/bin/sh',
+      process.platform === 'win32' ? ['/d', '/s', '/c', 'shell-is-all-agents-need --doctor'] : ['-c', 'shell-is-all-agents-need --doctor'],
+      { cwd: consumer, env, encoding: 'utf8', timeout: 30_000 }));
+    assert.equal(diagnostic.ok, true);
+    assert.equal(diagnostic.discovery.source, 'environment');
+    assert.equal(diagnostic.sessions.default, session);
     const codex = ['exec', '--yes', '--package=@openai/codex@0.164.0', '--', 'codex', 'mcp'];
     npm([...codex, 'add', 'shell-is-all-agents-need', '--', 'shell-is-all-agents-need'], consumer, env);
     const registered = JSON.parse(npm([...codex, 'get', 'shell-is-all-agents-need', '--json'], consumer, env));

@@ -1,6 +1,12 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { sessionName } from './errors.ts';
-import { discoverWindowsSession } from './windows-discovery.ts';
+import { inspectWindowsSession } from './windows-discovery.ts';
+
+export interface DiscoveryResult {
+  source: 'environment' | 'ancestor' | 'shared-client' | 'ambiguous' | 'unresolved';
+  session?: string;
+  candidates?: string[];
+}
 
 export interface DiscoveryOptions {
   platform?: string;
@@ -45,14 +51,14 @@ export function discoverAncestorSession(options: DiscoveryOptions = {}): string 
 /** A shared daemon is not descended from its interactive clients. Recover only
  * a unique session advertised by same-user Codex CLI processes, never an
  * arbitrary running Zellij session. Multiple clients in one session are fine. */
-export function discoverClientSession(options: DiscoveryOptions & { pids?: () => string[] } = {}): string | undefined {
-  if ((options.platform ?? process.platform) !== 'linux') return undefined;
+export function discoverClientSessions(options: DiscoveryOptions & { pids?: () => string[] } = {}): string[] {
+  if ((options.platform ?? process.platform) !== 'linux') return [];
   const uid = options.uid ?? process.getuid?.();
-  if (uid === undefined) return undefined;
+  if (uid === undefined) return [];
   const read = options.read ?? ((path: string) => readFileSync(path, 'utf8'));
   let pids: string[];
   try { pids = (options.pids ?? (() => readdirSync('/proc')))(); }
-  catch { return undefined; }
+  catch { return []; }
   const sessions = new Set<string>();
   for (const pid of pids) {
     if (!/^\d+$/u.test(pid)) continue;
@@ -65,15 +71,29 @@ export function discoverClientSession(options: DiscoveryOptions & { pids?: () =>
       const entry = read(`/proc/${pid}/environ`).split('\0').find(value => value.startsWith('ZELLIJ_SESSION_NAME='));
       if (!entry) continue;
       sessions.add(sessionName(entry.slice('ZELLIJ_SESSION_NAME='.length)));
-      if (sessions.size > 1) return undefined;
+      if (sessions.size > 1) return [...sessions];
     } catch {
       // Processes may exit or protect their environment while scanning.
     }
   }
-  return sessions.values().next().value;
+  return [...sessions];
+}
+
+export function discoverClientSession(options: DiscoveryOptions & { pids?: () => string[] } = {}): string | undefined {
+  const sessions = discoverClientSessions(options);
+  return sessions.length === 1 ? sessions[0] : undefined;
+}
+
+export function inspectCurrentSession(env: NodeJS.ProcessEnv = process.env): DiscoveryResult {
+  if (env.ZELLIJ_SESSION_NAME) return { source: 'environment', session: env.ZELLIJ_SESSION_NAME };
+  if (process.platform === 'win32') return inspectWindowsSession();
+  const ancestor = discoverAncestorSession();
+  if (ancestor) return { source: 'ancestor', session: ancestor };
+  const clients = discoverClientSessions();
+  if (clients.length > 1) return { source: 'ambiguous', candidates: clients };
+  return clients.length === 1 ? { source: 'shared-client', session: clients[0]! } : { source: 'unresolved' };
 }
 
 export function discoverCurrentSession(): string | undefined {
-  if (process.platform === 'win32') return discoverWindowsSession();
-  return discoverAncestorSession() ?? discoverClientSession();
+  return inspectCurrentSession({}).session;
 }

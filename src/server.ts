@@ -9,6 +9,7 @@ import { SubscriptionManager } from './subscriptions.ts';
 import { registerTools } from './tools.ts';
 import { help, readCliConfig } from './cli.ts';
 import { version } from './version.ts';
+import { diagnose } from './doctor.ts';
 
 export function createServer(config: Config = readRuntimeConfig(), runner: Runner = createRunner(config.binary)) {
   const client = new ZellijClient(config, runner);
@@ -29,6 +30,12 @@ export function createServer(config: Config = readRuntimeConfig(), runner: Runne
 export async function main(args = process.argv.slice(2)): Promise<void> {
   const options = readCliConfig(args);
   if ('help' in options) { process.stdout.write(help); return; }
+  if ('doctor' in options) {
+    const report = await diagnose(options.args);
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    if (!report.ok) process.exitCode = 1;
+    return;
+  }
   const { server, client, subscriptions } = createServer(options.config);
   await client.checkVersion();
   let closing = false;

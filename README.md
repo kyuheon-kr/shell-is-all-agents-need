@@ -31,6 +31,7 @@ Restart your MCP host and launch it inside a Zellij pane. Then ask: “Open a sh
 The current session is detected automatically, including through a shared Codex daemon when its clients agree on one session. If detection is unavailable or ambiguous, append `--allowed-sessions dev,work --session work` to the registration command. The first listed session is the default unless `--session` is supplied; the detected current session is always allowed.
 
 More options: `shell-is-all-agents-need --help`.
+Check setup and session detection: `shell-is-all-agents-need --doctor`.
 
 Pane programs run as long as needed. Control-request deadlines are configurable; see [runtime controls](https://github.com/kyuheon-kr/shell-is-all-agents-need/blob/main/docs/runtime.md).
 

@@ -8,6 +8,7 @@ export const help = `Usage: shell-is-all-agents-need [options]
 
   --allowed-sessions a,b,c  Allow these plus the detected current session; default to the first
   --session name            Choose a default from the allowed sessions
+  --doctor                  Print read-only JSON diagnostics and exit
   --help                    Show this help
 
 Example:
@@ -17,13 +18,15 @@ The detected current session is always allowed.
 Without session options, use environment configuration and automatic discovery.
 `;
 
-export function readCliConfig(args: string[], env: NodeJS.ProcessEnv = process.env, discover: () => string | undefined = discoverCurrentSession): { help: true } | { config: Config } {
+export function readCliConfig(args: string[], env: NodeJS.ProcessEnv = process.env, discover: () => string | undefined = discoverCurrentSession): { help: true } | { doctor: true; args: string[] } | { config: Config } {
   const { values } = parseArgs({ args, options: {
     'allowed-sessions': { type: 'string' },
     session: { type: 'string' },
     help: { type: 'boolean' },
+    doctor: { type: 'boolean' },
   }, strict: true, allowPositionals: false });
   if (values.help) return { help: true };
+  if (values.doctor) return { doctor: true, args: args.filter(arg => arg !== '--doctor' && arg !== '--doctor=true') };
   if (values['allowed-sessions'] === undefined && values.session === undefined) {
     return { config: readRuntimeConfig(env, discover) };
   }

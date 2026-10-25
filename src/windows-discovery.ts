@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { sessionName } from './errors.ts';
+import type { DiscoveryResult } from './discovery.ts';
 
 export interface WindowsProcess {
   pid: number;
@@ -42,12 +43,12 @@ function isWindowsProcess(value: unknown): value is WindowsProcess {
     && (row.startTime === undefined || row.startTime === null || (typeof row.startTime === 'string' && /^\d+$/u.test(row.startTime)));
 }
 
-export function discoverWindowsSession(
+export function inspectWindowsSession(
   parentPid = process.ppid,
   snapshot: () => WindowsProcess[] = () => readWindowsProcesses(parentPid),
-): string | undefined {
+): DiscoveryResult {
   let rows: WindowsProcess[];
-  try { rows = snapshot(); } catch { return undefined; }
+  try { rows = snapshot(); } catch { return { source: 'unresolved' }; }
   const processes = new Map(rows.map(row => [row.pid, row]));
   const valid = (value: string | null) => {
     if (!value) return undefined;
@@ -61,11 +62,16 @@ export function discoverWindowsSession(
     if (!row) break;
     if (row.session !== null) {
       const name = valid(row.session);
-      if (name) return name;
+      if (name) return { source: 'ancestor', session: name };
       break;
     }
     pid = row.parentPid;
   }
   const sessions = new Set(rows.filter(row => row.isClient).map(row => valid(row.session)).filter(name => name !== undefined));
-  return sessions.size === 1 ? sessions.values().next().value : undefined;
+  if (sessions.size > 1) return { source: 'ambiguous', candidates: [...sessions].slice(0, 2) };
+  return sessions.size === 1 ? { source: 'shared-client', session: sessions.values().next().value! } : { source: 'unresolved' };
+}
+
+export function discoverWindowsSession(parentPid = process.ppid, snapshot?: () => WindowsProcess[]): string | undefined {
+  return inspectWindowsSession(parentPid, snapshot).session;
 }
