@@ -6,6 +6,15 @@ An MCP server for sharing a live Zellij terminal with your AI agent. Read screen
 
 Inspired by browser-use and [shell-use](https://github.com/kyuheon-kr/shell-use).
 
+## Use cases
+
+- **Work together:** share a shell, REPL, debugger, or interactive CLI with your agent and step in anytime.
+- **Orchestrate agents:** have one agent launch Codex instances in separate panes, assign parallel tasks, collect results, send follow-ups, and coordinate reviews—all through the same terminal tools.
+
+Try: “Start three Codex agents in separate panes: one to inspect the code, one to review tests, and one to check the docs. Collect their findings and have them cross-review.”
+
+Give each worker an explicit working directory and completion marker. Use separate worktrees when workers edit files. The orchestrator must read pane updates and send follow-ups; subscriptions do not automatically wake agents or deliver instructions.
+
 ## Quick start
 
 Requires **Node.js 24+** and **Zellij 0.45.1+** on PATH, running as the same user. Use the same environment for Node, Zellij, and your MCP host: Linux, native Windows, or one WSL distribution.
