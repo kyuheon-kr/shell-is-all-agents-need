@@ -1,13 +1,19 @@
 {
   "name": "shell-is-all-agents-need",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Let AI agents work interactively in a shared terminal with humans",
   "type": "module",
   "repository": "github:kyuheon-kr/shell-is-all-agents-need",
   "homepage": "https://github.com/kyuheon-kr/shell-is-all-agents-need#readme",
   "bugs": "https://github.com/kyuheon-kr/shell-is-all-agents-need/issues",
-  "files": ["bin/", "dist/**/*.js", "native/"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "bin/",
+    "dist/**/*.js",
+    "native/"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=24.0.0"

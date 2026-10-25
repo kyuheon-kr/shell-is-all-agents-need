@@ -23,7 +23,7 @@ In bash/zsh or PowerShell:
 
 ```sh
 npm install -g shell-is-all-agents-need
-codex mcp add shell-is-all-agents-need -- node "$(npm root -g)/shell-is-all-agents-need/bin/shell-is-all-agents-need.js"
+codex mcp add shell-is-all-agents-need -- shell-is-all-agents-need
 ```
 
 Restart your MCP host and launch it inside a Zellij pane. Then ask: “Open a shared shell on the right and start a Python REPL.”
