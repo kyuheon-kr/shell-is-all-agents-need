@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "Let AI agents work interactively in a shared terminal with humans",
   "type": "module",
-  "private": true,
+  "repository": "github:kyuheon-kr/shell-is-all-agents-need",
+  "homepage": "https://github.com/kyuheon-kr/shell-is-all-agents-need#readme",
+  "bugs": "https://github.com/kyuheon-kr/shell-is-all-agents-need/issues",
+  "files": ["bin/", "dist/**/*.js", "native/"],
+  "publishConfig": { "access": "public" },
   "license": "MIT",
   "engines": {
     "node": ">=24.0.0"
@@ -14,9 +18,11 @@
   "scripts": {
     "start": "node bin/shell-is-all-agents-need.js",
     "build": "tsc -p tsconfig.json",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test --test-isolation=none test/*.test.ts",
     "test:integration": "node test/integration.ts",
+    "test:package": "node test/package.ts",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {

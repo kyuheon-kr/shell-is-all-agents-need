@@ -19,18 +19,18 @@ Give each worker an explicit working directory and completion marker. Use separa
 
 Requires **Node.js 24+** and **Zellij 0.45.1+** on PATH, running as the same user. Use the same environment for Node, Zellij, and your MCP host: Linux, native Windows, or one WSL distribution.
 
-From this checkout, in bash/zsh or PowerShell:
+In bash/zsh or PowerShell:
 
 ```sh
-npm ci
-codex mcp add shell-is-all-agents-need -- node "$PWD/bin/shell-is-all-agents-need.js"
+npm install -g shell-is-all-agents-need
+codex mcp add shell-is-all-agents-need -- node "$(npm root -g)/shell-is-all-agents-need/bin/shell-is-all-agents-need.js"
 ```
 
 Restart your MCP host and launch it inside a Zellij pane. Then ask: “Open a shared shell on the right and start a Python REPL.”
 
 The current session is detected automatically, including through a shared Codex daemon when its clients agree on one session. If detection is unavailable or ambiguous, append `--allowed-sessions dev,work --session work` to the registration command. The first listed session is the default unless `--session` is supplied; the detected current session is always allowed.
 
-More options: `node bin/shell-is-all-agents-need.js --help`.
+More options: `shell-is-all-agents-need --help`.
 
 <details>
 <summary>Platform notes</summary>
@@ -58,9 +58,11 @@ Observations show rendered screen state. New instructions to the agent still go 
 ## Development
 
 ```sh
+npm ci
+npm run build             # Compile the CLI to dist/ before running locally
 npm run check             # TypeScript + unit tests
-npm run build             # Compile to dist/
 npm run test:integration  # Real Zellij sessions, I/O, and lifecycle
+npm run test:package      # Install the tarball and check the CLI + MCP
 ```
 
-The CLI runs TypeScript directly on Node.js 24+. Integration tests create temporary sessions and clean them up afterward; they skip locally if Zellij is missing. Set `SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN` for a binary outside PATH. CI runs all checks on Linux and Windows.
+For a local MCP registration, use `node "$PWD/bin/shell-is-all-agents-need.js"`. Integration tests create temporary sessions and clean them up afterward; they skip locally if Zellij is missing. Set `SHELL_IS_ALL_AGENTS_NEED_ZELLIJ_BIN` for a binary outside PATH. CI runs all checks on Linux and Windows.

@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify published version and create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          version=$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')
+          test "$GITHUB_REF_NAME" = "v$version"
+          test "$(npm view "shell-is-all-agents-need@$version" version)" = "$version"
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then exit 0; fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          Share live Zellij terminals with AI agents on Linux and Windows, including shared-daemon session detection and pane-based agent orchestration.
+
+          Install: \`npm install -g shell-is-all-agents-need@$version\`
+
+          Requires Node.js 24+ and Zellij 0.45.1+. See the [README](https://github.com/$GH_REPO#readme) for MCP setup.
+          EOF
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/release-notes.md"

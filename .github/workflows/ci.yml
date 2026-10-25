@@ -51,3 +51,4 @@ jobs:
           if ((Get-FileHash (Join-Path $directory 'zellij.exe') -Algorithm SHA256).Hash -ne $expected) { throw 'Zellij checksum mismatch' }
           $directory >> $env:GITHUB_PATH
       - run: npm run test:integration
+      - run: npm run test:package
