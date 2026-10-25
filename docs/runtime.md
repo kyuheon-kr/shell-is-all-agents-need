@@ -1,5 +1,7 @@
 # Runtime controls
 
+On npm 12+, global installs require explicit permission for native install scripts. If Windows session creation reports missing `node-pty`, reinstall with `npm install -g --allow-scripts=node-pty shell-is-all-agents-need`. Keep optional dependencies enabled. Older npm versions can use the ordinary global install command.
+
 Pane programs have no execution deadline: keep servers, REPLs, and agents running and use `capture` or subscriptions to observe them. These are snapshots of rendered terminal state, not command-completion signals.
 
 Zellij control requests have a default 10-second deadline. Set `SHELL_IS_ALL_AGENTS_NEED_TIMEOUT_MS` in the MCP server environment to another nonnegative integer in milliseconds, or `0` to disable that deadline. MCP hosts can have their own request deadlines. Cancellation remains available even with the CLI deadline disabled.
