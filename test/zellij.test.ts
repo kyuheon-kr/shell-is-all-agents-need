@@ -7,6 +7,51 @@ import { setup } from './helpers.ts';
 
 const code = (expected: string) => (error: unknown) => error instanceof ZellijError && error.code === expected;
 
+for (const operation of ['list-tabs', 'list-panes'] as const) {
+  test(`${operation} retries an empty successful reply without treating it as an empty list`, async () => {
+    let attempts = 0;
+    const { client } = setup(args => {
+      if (args[3] === operation && attempts++ === 0) return '';
+      return undefined;
+    });
+    const result = operation === 'list-tabs' ? (await client.listTabs()).tabs : (await client.listPanes()).panes;
+    assert.ok(result.length > 0);
+    assert.equal(attempts, 2);
+  });
+
+  test(`${operation} bounds empty reply retries and preserves invalid output evidence`, async () => {
+    let attempts = 0;
+    const { client } = setup(args => {
+      if (args[3] === operation) { attempts++; return ''; }
+      return undefined;
+    });
+    await assert.rejects(operation === 'list-tabs' ? client.listTabs() : client.listPanes(),
+      error => code('INVALID_OUTPUT')(error) && (error as Error).message.includes('0 bytes): ""'));
+    assert.equal(attempts, 3);
+  });
+}
+
+test('metadata queries do not retry malformed nonempty JSON or replay a failed mutation', async () => {
+  const { client, calls } = setup(args => args[3] === 'list-panes' ? '{broken' : args[3] === 'new-tab' ? '' : undefined);
+  await assert.rejects(client.listPanes(), error => code('INVALID_OUTPUT')(error) && (error as Error).message.includes('"{broken"'));
+  assert.equal(calls.filter(args => args[3] === 'list-panes').length, 1);
+  await assert.rejects(client.createTab({}), code('INVALID_OUTPUT'));
+  assert.equal(calls.filter(args => args[3] === 'new-tab').length, 1);
+});
+
+test('cancelling an empty metadata retry stops further CLI queries', async () => {
+  const controller = new AbortController();
+  const { client, calls } = setup(args => {
+    if (args[3] === 'list-panes') {
+      controller.abort();
+      return '';
+    }
+    return undefined;
+  });
+  await assert.rejects(client.listPanes(undefined, undefined, controller.signal), code('CANCELLED'));
+  assert.equal(calls.filter(args => args[3] === 'list-panes').length, 1);
+});
+
 test('scope snapshots startup session, preserves explicit default and rejects an unlisted default', () => {
   const env = { ZELLIJ_SESSION_NAME: 'dev', SHELL_IS_ALL_AGENTS_NEED_SESSIONS: ' other, next,other ', SHELL_IS_ALL_AGENTS_NEED_SESSION: 'other' };
   const config = readConfig(env); const scope = new SessionScope(config);

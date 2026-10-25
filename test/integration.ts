@@ -48,8 +48,20 @@ test('real Zellij: background session, tabs, panes, I/O, subscriptions and lifec
   const runner: Runner = {
     ...baseRunner,
     async run(args, options) {
-      try { return await baseRunner.run(args, options); }
-      catch (error) { console.error('Zellij command failed:', args); throw error; }
+      try {
+        const output = await baseRunner.run(args, options);
+        if (['list-tabs', 'list-panes'].includes(args[3] ?? '') && !output.trim()) {
+          const message = `Zellij exited successfully with empty metadata: ${JSON.stringify(args)}`;
+          console.error(message);
+          if (process.env.GITHUB_ACTIONS) console.error(`::warning title=Empty Zellij metadata::${message}`);
+        }
+        return output;
+      } catch (error) {
+        const noSessions = args[0] === 'list-sessions' && error instanceof ZellijError && error.code === 'CLI_ERROR'
+          && /no (?:active )?(?:zellij )?sessions? (?:found|running)/iu.test(error.message);
+        if (!noSessions) console.error('Zellij command failed:', args);
+        throw error;
+      }
     },
   };
   const name = `shell-is-all-agents-need-test-${randomUUID().slice(0, 8)}`;

@@ -1,4 +1,5 @@
 import { stripVTControlCharacters } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { SessionScope } from './config.ts';
 import type { Config } from './config.ts';
 import { fail, integer, literal, paneId, ZellijError } from './errors.ts';
@@ -13,7 +14,8 @@ export interface CreateOptions {
 
 function records(text: string): Metadata[] {
   let value: unknown;
-  try { value = JSON.parse(text); } catch { fail('INVALID_OUTPUT', 'Zellij returned invalid JSON'); }
+  try { value = JSON.parse(text); }
+  catch { fail('INVALID_OUTPUT', `Zellij returned invalid JSON (${Buffer.byteLength(text)} bytes): ${JSON.stringify(text.slice(0, 512))}`); }
   if (!Array.isArray(value) || !value.every(row => row && typeof row === 'object' && !Array.isArray(row))) {
     fail('INVALID_OUTPUT', 'Expected a JSON array of Zellij metadata');
   }
@@ -121,9 +123,26 @@ export class ZellijClient {
     return this.runner.run(['--session', session, 'action', ...args], { signal });
   }
 
+  private async metadata(session: string, action: 'list-tabs' | 'list-panes', signal?: AbortSignal): Promise<Metadata[]> {
+    // Zellij's CLI can acknowledge an unrelated UnblockInputThread before the
+    // JSON reply and exit successfully with no output. Retry only these
+    // read-only queries and only empty replies; never hide malformed JSON or
+    // replay actions that may already have changed the terminal.
+    for (let attempt = 0; ; attempt++) {
+      if (signal?.aborted) fail('CANCELLED', 'Operation cancelled');
+      const output = await this.action(session, [action, '--all', '--json'], signal);
+      if (output.trim() || attempt === 2) return records(output);
+      try { await delay(50, undefined, { signal }); }
+      catch (error) {
+        if (signal?.aborted) fail('CANCELLED', 'Operation cancelled');
+        throw error;
+      }
+    }
+  }
+
   async listTabs(session?: string, signal?: AbortSignal): Promise<{ session: string; tabs: Tab[] }> {
     const target = await this.requireSession(session, signal);
-    const tabs = records(await this.action(target, ['list-tabs', '--all', '--json'], signal)).map(row => {
+    const tabs = (await this.metadata(target, 'list-tabs', signal)).map(row => {
       const id = row.tab_id ?? row.id;
       if (typeof id !== 'number' || !Number.isSafeInteger(id) || id < 0) fail('INVALID_OUTPUT', 'Tab has no stable tab ID');
       return { ...row, tab_id: id };
@@ -134,7 +153,7 @@ export class ZellijClient {
   async listPanes(session?: string, tabId?: number, signal?: AbortSignal): Promise<{ session: string; panes: Pane[] }> {
     if (tabId !== undefined) integer(tabId, 'tab_id');
     const target = await this.requireSession(session, signal);
-    const panes = records(await this.action(target, ['list-panes', '--all', '--json'], signal)).map((row): Pane => {
+    const panes = (await this.metadata(target, 'list-panes', signal)).map((row): Pane => {
       const raw = row.pane_id ?? row.id;
       const id = typeof raw === 'string' && /^(terminal|plugin)_\d+$/u.test(raw)
         ? raw
